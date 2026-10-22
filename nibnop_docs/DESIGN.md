@@ -1,10 +1,34 @@
 # DESIGN.md — Desain Laporan PDF NIB–NOP Integrator
 
-> Dokumen ini mendeskripsikan **desain laporan hasil (PDF) per modul sebagaimana dibangun saat ini (v0.9.4)**,
-> masalah desain yang ditemukan, dan batasan teknis yang harus dihormati saat didesain ulang.
-> Semua nilai (warna, font, ukuran, margin) diambil langsung dari kode (`reporting_full.py`, `ai_pdf.py`, `storage.py`)
-> dan diverifikasi dengan merender laporan secara headless (PyQt5 5.15, data sintetis) — lihat `reference/`.
+> Bagian 1–8 mencatat **baseline v0.9.4 sebelum redesain**, termasuk masalah yang ditemukan.
+> Implementasi saat ini memakai token bersama dalam `report_theme.py` untuk kedua renderer aktif
+> (`reporting_full.py` dan `ai_pdf.py`). Warna dan layout terkini diringkas di bawah.
 > Spesifikasi isi per halaman ada di [`REPORT_SPEC.md`](REPORT_SPEC.md). Konteks produk ada di [`PRODUCT.md`](PRODUCT.md).
+
+---
+
+## Redesain aktif: Palet D · Indigo–Safron
+
+| Peran | Hex | Penggunaan |
+|---|---|---|
+| Navy / ink / muted | `#1E2250` / `#1B1F33` / `#52636F` | Pita, judul dan tabel / isi / keterangan |
+| Grid / tint | `#D5D9E4` / `#F3F4F9` | Bingkai dan sumbu / pita header dan zebra |
+| BPN / PBB | `#3A3F9E` / `#A36A00` | Asal data; PBB diarsir putih 135° |
+| Level 1 / Level 2 | `#0B7285` / `#8F7A9E` | Pemaduan otomatis / butuh studio; Level 2 diarsir putih 45°, teks `#5E4B70` |
+| Bidang netral / overlap | `#AEBBC7` / `#B5173A` | Peta QA; tepi bidang netral `#8696A5` |
+| Gap / invalid awal | `#A65317` / `#7A4594` | Peran peta QA yang belum ditentukan dalam palet awal |
+| RandomForest / XGBoost | `#7B2E68` / `#176B58` | Seri model Modul 4, terpisah dari warna dataset |
+
+Status memakai simbol dan teks: baik ✓ `#14614F`/`#E6F4EF`, perlu perhatian ▲
+`#7A4B00`/`#FFF3D6`, tidak memadai ✕ `#9B1C1C`/`#FDECEC`, belum dapat
+dinilai ? `#4A5560`/`#EDF0F2`, dan peringatan ! `#7A1F1F`/`#FFF1EE`.
+Warna dataset tidak dipakai untuk status atau Level. Level 2 tidak menggunakan merah.
+
+Kedua renderer sekarang memakai pita navy dan header tint yang sama, judul dapat
+membungkus menurut lebar nyata font, tabel memakai pemotongan berdasar metrik font,
+angka diratakan ke kanan pada tabel utama, dan legenda peta diletakkan di atas bingkai.
+Halaman peta memakai kanvas lebih luas dan pemotongan gambar pada bingkai; status
+Modul 4 tanpa GOLD tidak menghasilkan halaman penilaian dan confusion matrix kosong.
 
 ---
 
