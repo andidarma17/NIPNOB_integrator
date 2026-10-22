@@ -12,14 +12,20 @@ from .compat import set_pdf_a4
 import math
 import textwrap
 
-from qgis.PyQt.QtCore import QPointF
+from qgis.PyQt.QtCore import QPointF, Qt
 from qgis.PyQt.QtGui import (QPdfWriter, QPageSize, QPainter, QPen, QColor,
-                              QBrush, QFont, QPolygonF)
+                              QBrush, QFont, QFontMetrics, QPolygonF)
 from .logic import number, ident, empty
+from .report_theme import (NAVY, INK, MUTED, GRID, TINT, BPN, PBB, LEVEL_1,
+                           LEVEL_2, LEVEL_2_TEXT, NO_PAIR, NEUTRAL_EDGE,
+                           OVERLAP, GAP, INVALID, GOOD_TEXT, BAD_TEXT,
+                           ATTENTION_TEXT, CAUTION_TEXT, assessment_style,
+                           category_style, fill_for, map_style, series_style)
 
-NAVY=QColor('#123b58'); BLUE=QColor('#236d9f'); ORANGE=QColor('#d58b43')
-RED=QColor('#bf5550'); GREEN=QColor('#267c68'); INK=QColor('#243642')
-MUTED=QColor('#5c707e'); LIGHT=QColor('#edf4f8'); GRID=QColor('#d4e1e9')
+try:
+    ELIDE_RIGHT=Qt.TextElideMode.ElideRight
+except AttributeError:
+    ELIDE_RIGHT=Qt.ElideRight
 
 
 def finite(value):
@@ -46,30 +52,60 @@ class Report:
         self.start('IKHTISAR DAN HASIL UTAMA')
     def font(self,size=10,bold=False):
         f=QFont('DejaVu Sans',size);f.setBold(bold);self.p.setFont(f)
+    def wrapped(self,s,width):
+        metrics=QFontMetrics(self.p.font())
+        lines=[]
+        for paragraph in str(s).split('\n'):
+            line=''
+            for word in paragraph.split():
+                candidate=(line+' '+word).strip()
+                if line and metrics.horizontalAdvance(candidate)>width:
+                    lines.append(line);line=word
+                else:line=candidate
+            lines.append(line)
+        return lines or ['']
     def start(self, heading, subtitle=''):
         if self.page:self.pdf.newPage()
-        self.page+=1;self.y=70
-        self.p.fillRect(0,0,self.w,15,NAVY)
-        self.p.fillRect(0,15,self.w,60,LIGHT)
-        self.font(10,True);self.p.setPen(QPen(BLUE))
-        self.p.drawText(self.l,48,'NIB-NOP INTEGRATOR | MODUL %d'%self.num)
+        self.page+=1;self.y=70;self.heading=heading
+        self.p.fillRect(0,0,self.w,14,NAVY)
+        self.p.fillRect(0,14,self.w,61,TINT)
+        self.font(10,True);self.p.setPen(QPen(NAVY))
+        self.p.drawText(self.l,49,'NIB-NOP INTEGRATOR  |  MODUL %d'%self.num)
         self.font(9);self.p.setPen(QPen(MUTED))
         self.p.drawText(self.l,self.h-42,'Laporan otomatis | %s'%datetime.now().strftime('%d-%m-%Y %H:%M'))
         self.p.drawText(self.w-130,self.h-42,'Halaman %d'%self.page)
-        self.y=122
+        self.y=126
         self.font(17,True);self.p.setPen(QPen(NAVY))
-        self.p.drawText(self.l,self.y,heading[:67]);self.y+=35
-        if subtitle:self.text(subtitle,9)
-        self.p.setPen(QPen(GRID));self.p.drawLine(self.l,self.y,self.w-self.r,self.y);self.y+=30
+        for line in self.wrapped(heading,self.cw):
+            self.p.drawText(self.l,self.y,line);self.y+=28
+        self.y+=7
+        if subtitle:self.text(subtitle,9,color=MUTED,space=20)
+        self.p.setPen(QPen(GRID));self.p.drawLine(self.l,self.y,self.w-self.r,self.y);self.y+=25
     def text(self,s,size=10,bold=False,color=INK,space=23,max_chars=100):
-        for line in textwrap.wrap(str(s),max_chars,break_long_words=False,break_on_hyphens=False) or ['']:
+        self.font(size,bold)
+        for line in self.wrapped(s,self.cw):
             if self.y>self.bottom:self.start('LANJUTAN - '+self.title[:38])
             self.font(size,bold);self.p.setPen(QPen(color));self.p.drawText(self.l,self.y,line)
             self.y+=space
-        self.y+=3
+        self.y+=4
     def sub(self,s):
-        if self.y>self.bottom-55:self.start('LANJUTAN - '+self.title[:35])
-        self.y+=14;self.text(s,12,True,NAVY,27,82)
+        if self.y>self.bottom-56:self.start('LANJUTAN - '+self.title[:35])
+        self.y+=19;self.text(s,12,True,NAVY,27,82)
+    def notice(self,message,kind='caution'):
+        color,background,symbol=assessment_style(kind)
+        self.font(10)
+        lines=self.wrapped(message,self.cw-59)
+        height=22*len(lines)+24
+        if self.y+height>self.bottom:self.start('LANJUTAN - '+self.title[:35])
+        top=self.y-15
+        self.p.fillRect(self.l,top,self.cw,height,background)
+        self.p.setPen(QPen(color));self.font(11,True)
+        self.p.drawText(self.l+14,self.y+4,symbol)
+        self.font(10);self.p.setPen(QPen(color))
+        for line in lines:
+            self.p.drawText(self.l+43,self.y+4,line)
+            self.y+=22
+        self.y+=height-22*len(lines)+10
     def table(self,head,rows,widths=None,limit=26):
         widths=widths or [self.cw/len(head)]*len(head)
         heights=31
@@ -78,17 +114,25 @@ class Report:
             self.font(9,True);self.p.setPen(QPen(QColor('white')))
             x=self.l
             for col,w in zip(head,widths):
-                self.p.drawText(int(x+8),int(self.y),str(col)[:max(4,int(w/8))]);x+=w
+                label=QFontMetrics(self.p.font()).elidedText(str(col),ELIDE_RIGHT,int(w-16))
+                self.p.drawText(int(x+8),int(self.y),label);x+=w
             self.y+=heights
         draw_header()
         for i,row in enumerate(rows[:limit]):
             if self.y>self.bottom-34:self.start('LANJUTAN TABEL');draw_header()
-            if i%2==0:self.p.fillRect(self.l,self.y-19,self.cw,heights,LIGHT)
+            if i%2==0:self.p.fillRect(self.l,self.y-19,self.cw,heights,TINT)
             self.font(9);self.p.setPen(QPen(INK));x=self.l
-            for val,w in zip(row,widths):
+            for j,(val,w) in enumerate(zip(row,widths)):
                 st=nice(val).replace('\n',' ')
-                if len(st)>max(4,int(w/8.4)):st=st[:max(3,int(w/8.4))-2]+'..'
-                self.p.drawText(int(x+8),int(self.y),st);x+=w
+                metrics=QFontMetrics(self.p.font())
+                if metrics.horizontalAdvance(st)>w-16:
+                    if str(head[j]).upper() in ('NIB','NOP'):
+                        self.font(8);metrics=QFontMetrics(self.p.font())
+                    else:st=metrics.elidedText(st,ELIDE_RIGHT,int(w-16))
+                numeric=isinstance(val,(int,float)) and str(head[j]).upper() not in ('NIB','NOP')
+                tx=x+w-8-metrics.horizontalAdvance(st) if numeric else x+8
+                self.p.drawText(int(tx),int(self.y),st)
+                self.font(9);x+=w
             self.y+=heights
         if len(rows)>limit:self.text('Tabel ditampilkan %d dari %d baris; data lengkap tersedia pada rekap_csv.zip.'%(limit,len(rows)),8,color=MUTED)
         self.y+=16
@@ -97,9 +141,13 @@ class Report:
         self.sub('Ringkasan indikator utama')
         rows=[(k,nice(v)) for k,v in stats.items()]
         self.table(['Indikator','Hasil'],rows,[self.cw*.64,self.cw*.36],limit=22)
+        if 'Status AI' in stats:
+            status=str(stats['Status AI'])
+            kind='unknown' if status in ('PREVIEW_ONLY','NO_MODEL') else 'attention'
+            self.notice('Status AI: '+status+'. Periksa hasil evaluasi GOLD dan aturan promosi sebelum menerima pasangan AI.',kind)
         self.sub('Metode dan parameter')
         for msg in notes:self.text('- '+msg,9,max_chars=110,space=21)
-        if warning:self.sub('Batasan interpretasi');self.text(warning,9,color=RED)
+        if warning:self.sub('Batasan interpretasi');self.notice(warning,'attention')
     def footer_recommendations(self,items,appendix=None):
         self.start('KESIMPULAN DAN TINDAK LANJUT')
         for i,s in enumerate(items,1):
@@ -109,69 +157,102 @@ class Report:
             self.sub('Arsip hasil')
             for s in appendix:self.text('- '+str(s),9)
         self.sub('Catatan umum')
-        self.text('Penanda otomatis merupakan indikasi pemeriksaan, bukan bukti hukum atas status bidang atau kewajiban pajak. Konfirmasi menggunakan sumber administrasi resmi.',9,color=MUTED)
+        self.notice('Penanda otomatis merupakan indikasi pemeriksaan, bukan bukti hukum atas status bidang atau kewajiban pajak. Konfirmasi menggunakan sumber administrasi resmi.','caution')
     def figpage(self,number,title,description):
         self.start('GRAFIK %d - %s'%(number,title),description)
     def no_data(self,message):
-        self.text('Visualisasi tidak tersedia: '+message,10,color=RED)
+        self.notice('Visualisasi tidak tersedia: '+message,'unknown')
+    def category_marker(self,x,y,label):
+        name=str(label).lower()
+        color,role=category_style(label)
+        if 'level 2' in name:
+            self.p.setPen(QPen(LEVEL_2_TEXT,1.2));self.p.setBrush(fill_for(color,role))
+            self.p.drawPolygon(QPolygonF([QPointF(x+6,y-12),QPointF(x+12,y-6),
+                                          QPointF(x+6,y),QPointF(x,y-6)]))
+        elif 'level 1' in name:
+            self.p.setPen(QPen(color,1));self.p.setBrush(QBrush(color))
+            self.p.drawRect(int(x),int(y-12),12,12)
+        elif name.startswith('tidak cocok'):
+            self.p.setPen(QPen(color,2))
+            self.p.drawLine(int(x),int(y-12),int(x+12),int(y))
+            self.p.drawLine(int(x+12),int(y-12),int(x),int(y))
+        elif name.startswith('cocok'):
+            self.p.setPen(QPen(color,2))
+            self.p.drawLine(int(x),int(y-6),int(x+4),int(y-2))
+            self.p.drawLine(int(x+4),int(y-2),int(x+13),int(y-13))
+        elif 'belum pasti' in name:
+            self.p.setPen(QPen(color,2));self.p.setBrush(QBrush())
+            self.p.drawEllipse(int(x),int(y-12),12,12)
+        else:return False
+        self.p.setBrush(QBrush())
+        return True
     def bar(self,labels,series,value_suffix='',horizontal=False):
         # grouped bar chart with value labels; one page per figure for readability
         if not labels or not series:self.no_data('Tidak ada kategori.');return
         if horizontal:
             self._bar_horizontal(labels,series,value_suffix);return
-        ytop=self.y+33;bottom=min(self.bottom-132,ytop+590)
+        ytop=self.y+32;bottom=min(self.bottom-150,ytop+780)
         xleft=self.l+70;xright=self.w-self.r-21
         vals=[max(0,float(finite(v) or 0)) for _,x in series for v in x]
         ymax=max(vals+[1])*1.15
         self._axes(xleft,ytop,xright,bottom,ymax)
         n=len(labels);group=(xright-xleft)/max(1,n);bw=min(42,max(8,group*.65/max(1,len(series))))
-        colors=[BLUE,ORANGE,GREEN,RED]
         for i,label in enumerate(labels):
             cx=xleft+(i+.5)*group
             for j,(legend,data) in enumerate(series):
                 v=max(0,float(finite(data[i]) or 0))
                 barheight=(v/ymax)*(bottom-ytop)
                 x=cx+(j-(len(series)-1)/2)*bw*1.3-bw*.5
-                color=colors[j%len(colors)]
-                self.p.fillRect(int(x),int(bottom-barheight),int(bw),int(barheight),color)
+                color,role=(category_style(label) if len(series)==1 else series_style(legend))
+                if self.num==3 and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
+                self.p.fillRect(int(x),int(bottom-barheight),int(bw),int(barheight),fill_for(color,role))
                 self.font(8);self.p.setPen(QPen(INK))
                 self.p.drawText(int(x-4),int(bottom-barheight-9),nice(round(v,2))+value_suffix)
             self.font(8);self.p.setPen(QPen(MUTED))
             wrapped=textwrap.wrap(str(label),max(7,int(group/9)),break_long_words=True)
-            for k,z in enumerate(wrapped[:3]):self.p.drawText(int(cx-group*.46),int(bottom+26+k*17),z)
-        for j,(label,_) in enumerate(series):
-            xx=xleft+j*175
-            self.p.fillRect(int(xx),int(bottom+105),12,12,colors[j%4])
-            self.p.setPen(QPen(INK));self.font(9);self.p.drawText(int(xx+19),int(bottom+115),str(label)[:23])
+            marker_x=cx-group*.46
+            has_marker=self.category_marker(marker_x,bottom+26,label)
+            self.p.setPen(QPen(MUTED));self.font(8)
+            for k,z in enumerate(wrapped[:3]):self.p.drawText(int(marker_x+(18 if has_marker else 0)),int(bottom+26+k*17),z)
+        if len(series)>1:
+            for j,(label,_) in enumerate(series):
+                xx=xleft+j*175;color,role=series_style(label)
+                self.p.fillRect(int(xx),int(bottom+105),12,12,fill_for(color,role))
+                self.p.setPen(QPen(INK));self.font(9);self.p.drawText(int(xx+19),int(bottom+115),str(label)[:23])
         self.y=bottom+145
     def _axes(self,xleft,top,right,bottom,ymax):
         self.p.setPen(QPen(GRID,1))
         for k in range(5):
             val=ymax*k/4;yy=bottom-(bottom-top)*k/4
             self.p.drawLine(int(xleft),int(yy),int(right),int(yy))
-            self.font(8);self.p.setPen(QPen(MUTED));self.p.drawText(int(self.l),int(yy+4),'%.1f'%val)
+            self.font(8);self.p.setPen(QPen(MUTED));self.p.drawText(int(self.l),int(yy+4),'%d'%round(val))
             self.p.setPen(QPen(GRID))
     def _bar_horizontal(self,labels,series,suffix):
         label_col=245;x0=self.l+label_col;xright=self.w-self.r-65
         vals=[max(0,float(finite(v) or 0)) for _,x in series for v in x]
-        vmax=max(vals+[1]);row_h=min(38,max(25,int(600/max(1,len(labels)))))
+        vmax=max(vals+[1]);row_h=min(48,max(29,int(780/max(1,len(labels)))))
         self.y+=15
-        cols=[BLUE,ORANGE,GREEN,RED]
         for i,label in enumerate(labels):
             if self.y+row_h>self.bottom-78:self.start('LANJUTAN GRAFIK')
-            self.font(9);self.p.setPen(QPen(INK));self.p.drawText(self.l,self.y+10,str(label)[:34])
+            marker=self.num==3 and 'Alasan Level 2' in self.heading
+            if marker:self.category_marker(self.l,self.y+10,'Level 2')
+            self.font(9);self.p.setPen(QPen(INK));self.p.drawText(self.l+(18 if marker else 0),self.y+10,str(label)[:34])
             for j,(name,vec) in enumerate(series):
                 v=max(0,float(finite(vec[i]) or 0));bh=max(5,int((row_h-8)/max(1,len(series))))
                 yy=self.y+(j-.5)*bh
                 ww=int((xright-x0)*v/vmax)
-                self.p.fillRect(int(x0),int(yy),max(0,ww),max(3,bh-1),cols[j%4])
+                color,role=(category_style(label) if len(series)==1 else series_style(name))
+                if self.num==3 and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
+                self.p.fillRect(int(x0),int(yy),max(0,ww),max(3,bh-1),fill_for(color,role))
                 self.p.setPen(QPen(MUTED));self.font(8)
                 self.p.drawText(int(x0+max(0,ww)+7),int(yy+bh-2),nice(v)+suffix)
             self.y+=row_h
         self.y+=18
-        for i,(name,_) in enumerate(series):
-            self.p.fillRect(self.l+i*230,self.y-12,12,12,cols[i%4]);self.font(9);self.p.setPen(QPen(INK))
-            self.p.drawText(self.l+i*230+19,self.y,str(name))
+        if len(series)>1:
+            for i,(name,_) in enumerate(series):
+                color,role=series_style(name)
+                self.p.fillRect(self.l+i*230,self.y-12,12,12,fill_for(color,role));self.font(9);self.p.setPen(QPen(INK))
+                self.p.drawText(self.l+i*230+19,self.y,str(name))
         self.y+=20
     def histogram(self,values,unit='m2',max_percentile=99):
         data=sorted(x for x in (finite(v) for v in values) if x is not None and x>0)
@@ -185,14 +266,15 @@ class Report:
             cell=min(bin_count-1,int(v/max(upper,1e-9)*bin_count))
             hist[cell]+=1
         ymax=max(hist+[1])*1.14
-        top=self.y+35;bottom=min(self.bottom-110,top+595)
+        top=self.y+35;bottom=min(self.bottom-120,top+775)
         left=self.l+75;right=self.w-self.r-25
         self._axes(left,top,right,bottom,ymax)
         barwidth=(right-left)/bin_count
-        self.p.setPen(QPen(BLUE))
+        color,role=series_style('PBB' if 'PBB' in self.heading else 'BPN')
+        self.p.setPen(QPen(color))
         for i,v in enumerate(hist):
             hh=(v/ymax)*(bottom-top)
-            self.p.fillRect(int(left+i*barwidth+1),int(bottom-hh),max(1,int(barwidth-2)),int(hh),BLUE)
+            self.p.fillRect(int(left+i*barwidth+1),int(bottom-hh),max(1,int(barwidth-2)),int(hh),fill_for(color,role))
         self.font(9);self.p.setPen(QPen(MUTED))
         for i in range(6):
             value=upper*i/5
@@ -206,7 +288,7 @@ class Report:
         vals=[(i+1,finite(v)) for i,v in enumerate(values)]
         vals=[(x,y) for x,y in vals if y is not None and y>0]
         if not vals:self.no_data('Tidak ada nilai luas positif.');return
-        top=self.y+40;bottom=min(self.bottom-98,top+640)
+        top=self.y+40;bottom=min(self.bottom-115,top+770)
         left=self.l+80;right=self.w-self.r-30
         lo=min(math.log10(y) for _,y in vals);hi=max(math.log10(y) for _,y in vals)
         if hi==lo:hi+=1
@@ -217,7 +299,8 @@ class Report:
             self.p.drawLine(int(left),int(yy),int(right),int(yy))
             self.font(8);self.p.setPen(QPen(MUTED));self.p.drawText(int(self.l),int(yy+4),'%.1f'%zz)
             self.p.setPen(QPen(GRID))
-        self.p.setPen(QPen(BLUE,1.4));self.p.setBrush(QBrush(BLUE))
+        color=PBB if 'PBB' in self.heading else BPN
+        self.p.setPen(QPen(color,1.4));self.p.setBrush(QBrush(color))
         for x,y in vals:
             px=left+(x/maxx)*(right-left);py=bottom-(math.log10(y)-lo)/(hi-lo)*(bottom-top)
             self.p.drawEllipse(QPointF(float(px),float(py)),1.9,1.9)
@@ -238,7 +321,7 @@ class Report:
             self.p.drawText(int(x-10),int(bottom+23),'%.0f'%(xmax*i/4))
             self.p.drawText(self.l,int(y+4),'%.0f'%(ymax*i/4))
             self.p.setPen(QPen(GRID))
-        self.p.setPen(QPen(BLUE,1.2));self.p.setBrush(QBrush(BLUE))
+        self.p.setPen(QPen(NAVY,1.2));self.p.setBrush(QBrush(NAVY))
         for x,y in good[:12000]:
             xp=left+(min(xmax,max(0,x))/xmax)*(right-left)
             yp=bottom-(min(ymax,max(0,y))/ymax)*(bottom-top)
@@ -250,8 +333,9 @@ class Report:
         Geometry visualisation uses the original planar coordinates, without basemap.
         """
         self.sub(title)
-        valid=[];bbox=[]
+        valid=[];bbox=[];group_counts=[]
         for rows,col,predicate,label in datasets:
+            colour,role,edge=map_style(label,col)
             count=0
             for r in rows:
                 g=r.get('geom')
@@ -259,10 +343,26 @@ class Report:
                 if predicate is not None and not predicate(r):continue
                 bb=g.boundingBox()
                 if focus is not None and not bb.intersects(focus):continue
-                valid.append((g,QColor(col)));bbox.append(bb)
+                valid.append((g,colour,role,edge));bbox.append(bb)
                 count+=1
                 if count>=max_features:break
+            group_counts.append(count)
         if not valid:self.no_data('Tidak ada geometri untuk batas peta ini.');return
+        self.y+=10
+        for j,(_rows,col,_pred,label) in enumerate(datasets):
+            lx=self.l+(j%3)*self.cw/3
+            if j and j%3==0:self.y+=28
+            colour,role,edge=map_style(label,col)
+            self.p.setPen(QPen(edge,1.2));self.p.setBrush(fill_for(colour,role))
+            if role=='level2':
+                shape=QPolygonF([QPointF(lx+7,self.y-14),QPointF(lx+14,self.y-7),
+                                 QPointF(lx+7,self.y),QPointF(lx,self.y-7)])
+                self.p.drawPolygon(shape)
+            else:self.p.drawRect(int(lx),int(self.y-14),14,14)
+            self.font(9);self.p.setPen(QPen(INK))
+            self.p.drawText(int(lx+21),int(self.y-2),str(label)[:26]+' (%d)'%group_counts[j])
+        self.p.setBrush(QBrush())
+        self.y+=18
         x0=min(b.xMinimum() for b in bbox);x1=max(b.xMaximum() for b in bbox)
         y0=min(b.yMinimum() for b in bbox);y1=max(b.yMaximum() for b in bbox)
         if focus is not None:
@@ -270,9 +370,9 @@ class Report:
         dx=max(x1-x0,.001);dy=max(y1-y0,.001)
         padx=.025*dx;pady=.025*dy;x0-=padx;x1+=padx;y0-=pady;y1+=pady
         dx=x1-x0;dy=y1-y0
-        top=self.y+15;bottom=min(self.bottom-100,top+665)
+        top=self.y+15;bottom=min(self.bottom-128,top+740)
         left=self.l+15;right=self.w-self.r-20
-        self.p.fillRect(int(left),int(top),int(right-left),int(bottom-top),QColor('#f8fafb'))
+        self.p.fillRect(int(left),int(top),int(right-left),int(bottom-top),QColor('#FCFCFE'))
         self.p.setPen(QPen(GRID));self.p.drawRect(int(left),int(top),int(right-left),int(bottom-top))
         scale=min((right-left)/dx,(bottom-top)/dy)
         midx=(x0+x1)/2;midy=(y0+y1)/2
@@ -280,15 +380,14 @@ class Report:
         def xy(pt):return QPointF(float(xx+(pt.x()-midx)*scale),float(yy-(pt.y()-midy)*scale))
         self.p.save()
         self.p.setClipRect(int(left),int(top),int(right-left),int(bottom-top))
-        for geom,color in valid:
+        for geom,color,role,edge in valid:
             geompolys=[]
             try:
                 if geom.isMultipart():geompolys=geom.asMultiPolygon()
                 else:geompolys=[geom.asPolygon()]
             except (TypeError,ValueError):continue
-            edge=QColor(color);edge.setAlpha(180)
-            fill=QColor(color);fill.setAlpha(90)
-            self.p.setPen(QPen(edge,1.1));self.p.setBrush(QBrush(fill))
+            outline=QColor(edge);outline.setAlpha(190)
+            self.p.setPen(QPen(outline,1.1));self.p.setBrush(fill_for(color,role,130))
             for poly in geompolys:
                 if not poly or len(poly[0])<3:continue
                 points=poly[0]
@@ -299,13 +398,7 @@ class Report:
         self.p.setBrush(QBrush())
         self.p.restore()
         self.y=bottom+29
-        for j,(_rows,color,_pred,label) in enumerate(datasets):
-            lx=self.l+(j%3)*self.cw/3
-            if j and j%3==0:self.y+=24
-            self.p.fillRect(int(lx),int(self.y-12),12,12,QColor(color));self.font(9);self.p.setPen(QPen(INK))
-            self.p.drawText(int(lx+20),int(self.y),str(label)[:26])
-        self.y+=45
-        self.text('Peta indikatif tanpa peta dasar. Koordinat mengikuti CRS layer; warna menunjukkan kategori QA. Periksa lokasi detail pada layer QGIS.',9,color=MUTED)
+        self.text('Peta indikatif tanpa peta dasar. Koordinat mengikuti CRS layer; pola dan warna menunjukkan kategori. Angka legenda menghitung fitur yang digambar (maksimal %d per kategori). Periksa lokasi detail pada layer QGIS.'%max_features,9,color=MUTED)
     def close(self):
         self.p.end();return str(self.path)
 
@@ -364,15 +457,15 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps):
     r.figpage(1,'Indikator kualitas spasial','Perbandingan jumlah kasus BPN dan PBB.')
     r.bar(cats,[('BPN',get('bpn')),('PBB',get('pbb'))])
     r.start('PETA 1 - KUALITAS BPN')
-    r.map([(b_rows,'#b9cad7',lambda x:not x['a'].get('overlap') and not x['a'].get('bid_tambah'),'Bidang lainnya'),
-           (b_rows,'#cb564d',lambda x:bool(x['a'].get('overlap')),'Overlap'),
-           (b_rows,'#e6a23a',lambda x:bool(x['a'].get('bid_tambah')),'Gap baru')], 'Distribusi bidang terindikasi bermasalah')
+    r.map([(b_rows,NO_PAIR,lambda x:not x['a'].get('overlap') and not x['a'].get('bid_tambah'),'Bidang lainnya'),
+           (b_rows,OVERLAP,lambda x:bool(x['a'].get('overlap')),'Overlap'),
+           (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Gap baru')], 'Distribusi bidang terindikasi bermasalah')
     r.start('PETA 2 - KUALITAS PBB')
-    r.map([(p_rows,'#b9cad7',lambda x:not x['a'].get('overlap'),'Bidang lainnya'),
-           (p_rows,'#cb564d',lambda x:bool(x['a'].get('overlap')),'Overlap')],'Distribusi objek PBB yang overlap')
+    r.map([(p_rows,NO_PAIR,lambda x:not x['a'].get('overlap'),'Bidang lainnya'),
+           (p_rows,OVERLAP,lambda x:bool(x['a'].get('overlap')),'Overlap')],'Distribusi objek PBB yang overlap')
     r.start('PETA 3 - PERBAIKAN GEOMETRI')
-    r.map([(p_rows,'#d7e3eb',lambda z:not bool(z['a'].get('geom_invalid')),'PBB lainnya'),
-           (p_rows,'#df9353',lambda z:bool(z['a'].get('geom_invalid')),'Invalid awal / fixed')],
+    r.map([(p_rows,NO_PAIR,lambda z:not bool(z['a'].get('geom_invalid')),'PBB lainnya'),
+           (p_rows,INVALID,lambda z:bool(z['a'].get('geom_invalid')),'Invalid awal / fixed')],
           'Poligon PBB yang teridentifikasi invalid sebelum perbaikan')
     newg=[x for x in b_rows if x['a'].get('bid_tambah') and not x['geom'].isNull() and not x['geom'].isEmpty()]
     if newg:
@@ -381,8 +474,8 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps):
         from qgis.core import QgsRectangle
         focus=QgsRectangle(biggest.xMinimum()-margin,biggest.yMinimum()-margin,biggest.xMaximum()+margin,biggest.yMaximum()+margin)
         r.start('PETA 4 - DETAIL GAP BPN')
-        r.map([(b_rows,'#dce6ed',lambda x:not bool(x['a'].get('bid_tambah')),'Bidang sekitar'),
-               (b_rows,'#e6a23a',lambda x:bool(x['a'].get('bid_tambah')),'Kandidat gap')],
+        r.map([(b_rows,NO_PAIR,lambda x:not bool(x['a'].get('bid_tambah')),'Bidang sekitar'),
+               (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Kandidat gap')],
                'Perbesaran lokasi gap terpilih',focus=focus)
         r.text('Kandidat gap dengan luas terbesar: %.2f m2. Posisi hanya indikatif; periksa detail topologi di QGIS.'%max(g['geom'].area() for g in newg),9)
     else:
@@ -433,11 +526,11 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
     level1_pbb_ids={pair['record_pbb'] for pair in pairs if pair.get('status')=='LEVEL_1'}
     lev1p=[row for row in p_rows if row['idx'] in level1_pbb_ids]
     r.start('PETA 1 - LEVEL BPN')
-    r.map([(lev2b,'#d7e1e8',None,'BPN Level 2'),(lev1,'#328b73',None,'BPN Level 1')],
+    r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
            'Distribusi pasangan otomatis dan bidang studio')
     r.start('PETA 2 - LEVEL PBB')
-    r.map([(lev2p,'#d7e1e8',None,'PBB Level 2'),
-           (lev1p,'#328b73',None,'PBB Level 1')],
+    r.map([(lev2p,LEVEL_2,None,'PBB Level 2'),
+           (lev1p,LEVEL_1,None,'PBB Level 1')],
            'Distribusi pasangan otomatis dan objek PBB untuk verifikasi studio')
     r.start('REKAP PASANGAN DAN KANDIDAT')
     r.sub('Pasangan dengan overlap BPN terbesar')
@@ -466,10 +559,10 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
         r.bar(['%02d-%02d'% (i*10,(i+1)*10) for i in range(10)],[('Kandidat',bins)])
     else:r.no_data('Model belum dipilih atau skor AI tidak tersedia.')
     r.start('PETA 1 - LEVEL 1 DAN BPN STUDIO')
-    r.map([(lev2b,'#d7e2e9',None,'BPN Level 2'),(lev1,'#308671',None,'BPN Level 1')],
+    r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
           'Hasil pemaduan menurut bidang BPN')
     r.start('PETA 2 - PBB STUDIO')
-    r.map([(lev2p,'#d7e2e9',None,'PBB Level 2')],
+    r.map([(lev2p,LEVEL_2,None,'PBB Level 2')],
           'Objek PBB yang memerlukan verifikasi')
     r.start('DAFTAR REKOMENDASI INFERENCE')
     r.sub('Kandidat dengan skor AI terbesar')
@@ -510,8 +603,8 @@ def report6(folder,decisions,candidates,bpn_rows=None,pbb_rows=None,notes=None):
             return vals
         bidx=safe_indices('record_bpn')
         pidx=safe_indices('record_pbb')
-        r.map([(bpn_rows,'#267c68',lambda row:row['idx'] in bidx,'BPN diverifikasi'),
-               (pbb_rows,'#d58b43',lambda row:row['idx'] in pidx,'PBB diverifikasi')],
+        r.map([(bpn_rows,BPN,lambda row:row['idx'] in bidx,'BPN diverifikasi'),
+               (pbb_rows,PBB,lambda row:row['idx'] in pidx,'PBB diverifikasi')],
                'Bidang BPN dan PBB yang sudah memperoleh keputusan')
     else:r.no_data('Layer sumber tidak tersedia saat PDF diekspor.')
     r.start('TABEL KEPUTUSAN OPERATOR')
