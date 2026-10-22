@@ -1,15 +1,14 @@
 """Modul 4: multipage PDF report drawn with bundled QGIS Qt (Qt5/Qt6).
 No matplotlib/reportlab dependency inside QGIS.
 """
-import textwrap
-from datetime import datetime
 from pathlib import Path
 from .compat import set_pdf_a4
 from qgis.PyQt.QtCore import QPointF, Qt
-from qgis.PyQt.QtGui import QPdfWriter, QPageSize, QPainter, QPen, QColor, QFont, QFontMetrics, QPolygonF
+from qgis.PyQt.QtGui import QPdfWriter, QPainter, QPen, QColor, QFontMetrics, QPolygonF
 from .report_theme import (NAVY, INK, MUTED, GRID as BORDER, TINT as PALE,
-                           MODEL_RF, MODEL_XGB, GOOD_BG, GOOD_TEXT,
-                           BAD_BG, BAD_TEXT, assessment_style)
+                           MODEL_RF, MODEL_XGB, GOOD_BG, BAD_BG)
+from .report_font import report_font
+from .report_frame import page_head, wrap, callout
 
 try:
     ELIDE_RIGHT=Qt.TextElideMode.ElideRight
@@ -41,41 +40,13 @@ class Canvas:
         self.cw=self.w-self.ml-self.mr
         self.font(10)
     def font(self,size=10,bold=False):
-        f=QFont('DejaVu Sans',size);f.setBold(bold)
-        self.p.setFont(f)
+        self.p.setFont(report_font(size,bold))
     def wrapped(self,text,width):
-        metrics=QFontMetrics(self.p.font())
-        lines=[]
-        for paragraph in str(text).split('\n'):
-            line=''
-            for word in paragraph.split():
-                candidate=(line+' '+word).strip()
-                if line and metrics.horizontalAdvance(candidate)>width:
-                    lines.append(line);line=word
-                else:line=candidate
-            lines.append(line)
-        return lines or ['']
+        return wrap(self.p,text,width)
     def new(self,title,subtitle=''):
         if self.page_num:self.pdf.newPage()
-        self.page_num+=1;self.y=70
-        self.p.fillRect(0,0,self.w,14,NAVY)
-        self.p.fillRect(0,14,self.w,61,PALE)
-        self.font(10,True);self.p.setPen(QPen(NAVY))
-        self.p.drawText(self.ml,49,'NIB-NOP INTEGRATOR  |  MODUL 4')
-        self.p.setPen(QPen(MUTED));self.font(9)
-        self.p.drawText(self.ml,self.h-42,'Laporan otomatis | %s'%datetime.now().strftime('%d-%m-%Y %H:%M'))
-        self.p.drawText(self.w-130,self.h-42,'Halaman %d'%self.page_num)
-        self.y=126
-        self.font(17,True);self.p.setPen(QPen(NAVY))
-        for line in self.wrapped(title,self.cw):
-            self.p.drawText(self.ml,self.y,line);self.y+=28
-        self.y+=7
-        if subtitle:
-            self.font(9);self.p.setPen(QPen(MUTED))
-            for line in self.wrapped(subtitle,self.cw):
-                self.p.drawText(self.ml,self.y,line);self.y+=20
-        self.p.setPen(QPen(BORDER));self.p.drawLine(self.ml,self.y,self.w-self.mr,self.y)
-        self.y+=26
+        self.page_num+=1
+        self.y=page_head(self.p,self.w,self.h,self.ml,self.mr,4,self.page_num,title,subtitle)
     def line(self,s,size=10,bold=False,color=INK,space=22):
         self.font(size,bold);self.p.setPen(QPen(color));self.p.drawText(self.ml,self.y,str(s));self.y+=space
     def para(self,t,size=9,width=109,leading=20,indent=0):
@@ -89,56 +60,59 @@ class Canvas:
         self.y+=20
         self.font(12,True);self.p.setPen(QPen(NAVY));self.p.drawText(self.ml,self.y,t)
         self.y+=30
-    def table(self,head, rows, widths=None, row_height=30, size=8):
+    def table(self,head, rows, widths=None, row_height=30, size=9):
         n=len(head)
         if widths is None:widths=[self.cw/n]*n
         xx=[self.ml]
         for w in widths:xx.append(xx[-1]+w)
         def draw_row(vals,headrow=False,i=0):
-            top=self.y-18
-            self.p.fillRect(self.ml,top,int(sum(widths)),row_height,
-                NAVY if headrow else (PALE if i%2==0 else QColor('#ffffff')))
-            self.font(size,headrow);self.p.setPen(QPen(QColor('white') if headrow else INK))
-            for j,val in enumerate(vals):
-                st=str(val)
-                metrics=QFontMetrics(self.p.font())
-                if metrics.horizontalAdvance(st)>widths[j]-14:
-                    st=metrics.elidedText(st,ELIDE_RIGHT,int(widths[j]-14))
-                self.p.drawText(int(xx[j]+7),int(self.y),st)
-            self.y+=row_height
-        draw_row(head,True)
-        for i,row in enumerate(rows):
-            if self.y>self.h-110:
+            self.font(max(9,size),headrow)
+            cells=[]
+            for val,w in zip(vals,widths):
+                lines=self.wrapped(str(val),w-14)
+                expanded=[]
+                for line in lines:
+                    part=''
+                    for char in line:
+                        if part and QFontMetrics(self.p.font()).horizontalAdvance(part+char)>w-14:
+                            expanded.append(part);part=char
+                        else:part+=char
+                    if part:expanded.append(part)
+                cells.append(expanded or [''])
+            height=max(row_height,14+18*max(map(len,cells)))
+            if not headrow and self.y+height>self.h-110:
                 self.new('Lanjutan tabel evaluasi')
                 draw_row(head,True)
+            top=self.y-18
+            self.p.fillRect(self.ml,top,int(sum(widths)),height,
+                NAVY if headrow else (PALE if i%2==0 else QColor('#ffffff')))
+            self.font(max(9,size),headrow);self.p.setPen(QPen(QColor('white') if headrow else INK))
+            for j,lines in enumerate(cells):
+                for k,line in enumerate(lines):
+                    self.p.drawText(int(xx[j]+7),int(self.y+k*18),line)
+            self.y+=height
+        draw_row(head,True)
+        for i,row in enumerate(rows):
             draw_row(row,False,i)
         self.y+=14
     def note(self,text, caution=False, kind=None):
         if kind is None and caution:kind='caution'
-        if kind is None:ink,background,symbol=INK,PALE,''
-        else:ink,background,symbol=assessment_style(kind)
         self.font(10)
-        lines=self.wrapped(text,self.cw-(58 if symbol else 30))
-        box_h=30+23*len(lines)
+        lines=self.wrapped(text,self.cw-32)
+        box_h=40+23*len(lines)
         if self.y+box_h>self.h-90:self.new('Catatan evaluasi')
-        self.p.fillRect(self.ml,self.y-12,self.cw,box_h,background)
-        if symbol:
-            self.p.setPen(QPen(ink));self.font(11,True)
-            self.p.drawText(self.ml+14,self.y+7,symbol)
-        self.p.setPen(QPen(ink));self.font(10)
-        for s in lines:
-            self.p.drawText(self.ml+(43 if symbol else 14),self.y+7,s);self.y+=23
-        self.y+=31
+        self.y+=callout(self.p,self.ml,self.y,self.cw,text,
+                        'warning' if kind in ('caution','bad') else 'note')+18
     def close(self):self.p.end()
 
 
-def plot(c,x,y,width,height,series,xname,yname,baseline=None):
+def plot(c,x,y,width,height,series,xname,yname,baseline=None,diagonal=False):
     # series = [(title,color, {'x':[], 'y':[]}),...]
     p=c.p
     left=x+39;top=y+23;right=x+width-11;bottom=y+height-54
     p.setPen(QPen(BORDER,1))
     p.drawRect(int(left),int(top),int(right-left),int(bottom-top))
-    c.font(8)
+    c.font(9)
     for i in range(5):
         v=i/4
         py=bottom-v*(bottom-top);px=left+v*(right-left)
@@ -148,9 +122,13 @@ def plot(c,x,y,width,height,series,xname,yname,baseline=None):
         p.drawText(int(left-33),int(py+4),'%.2f'%v)
         p.drawText(int(px-10),int(bottom+18),'%.2f'%v)
     if baseline is not None:
-        p.setPen(QPen(MUTED,1))
+        p.setPen(QPen(MUTED,1.4,DASH_LINE))
         yy=bottom-float(baseline)*(bottom-top)
         p.drawLine(int(left),int(yy),int(right),int(yy))
+        c.font(9);p.drawText(int(right-155),int(yy-5),'Acuan %.2f'%baseline)
+    if diagonal:
+        p.setPen(QPen(MUTED,1.4,DASH_LINE))
+        p.drawLine(int(left),int(bottom),int(right),int(top))
     for index,(label,color,points) in enumerate(series):
         xs=points.get('x',[]);ys=points.get('y',[])
         if len(xs)<2:continue
@@ -159,21 +137,21 @@ def plot(c,x,y,width,height,series,xname,yname,baseline=None):
         pen=QPen(color,2.6)
         if index%2:pen.setStyle(DASH_LINE)
         p.setPen(pen);p.drawPolyline(poly)
-    c.font(9);p.setPen(QPen(INK));p.drawText(int(left+25),int(bottom+39),xname)
-    p.drawText(int(left-15),int(top-10),yname)
-    lx=left;ly=y+height+10
+    c.font(9);p.setPen(QPen(INK));p.drawText(int(left+25),int(bottom+37),xname)
+    p.drawText(int(left),int(top-10),yname)
+    lx=left;ly=y+height+17
     for index,(label,color,_) in enumerate(series):
         pen=QPen(color,2.6)
         if index%2:pen.setStyle(DASH_LINE)
         p.setPen(pen);p.drawLine(int(lx),int(ly-4),int(lx+22),int(ly-4))
-        p.setPen(QPen(INK));c.font(8);p.drawText(int(lx+29),int(ly),label)
+        p.setPen(QPen(INK));c.font(9);p.drawText(int(lx+29),int(ly),label)
         lx+=min(190,width/max(1,len(series)))
 
 
 def confusion(c,name,m,x,y,block=64):
     c.font(11,True);c.p.setPen(QPen(NAVY));c.p.drawText(x,y,name)
     y+=25
-    c.font(8);c.p.setPen(QPen(MUTED));c.p.drawText(x+64,y,'Pred 0');c.p.drawText(x+128,y,'Pred 1')
+    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x+64,y,'Pred 0');c.p.drawText(x+128,y,'Pred 1')
     y+=13
     for row in range(2):
         for col in range(2):
@@ -181,7 +159,7 @@ def confusion(c,name,m,x,y,block=64):
             bx=x+60+col*block;by=y+row*block
             c.p.fillRect(bx,by,block-3,block-3, GOOD_BG if row==col else BAD_BG)
             c.font(11,True);c.p.setPen(QPen(INK));c.p.drawText(bx+15,by+34,str(v))
-    c.font(8);c.p.setPen(QPen(MUTED));c.p.drawText(x,y+36,'Real 0');c.p.drawText(x,y+100,'Real 1')
+    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x,y+36,'Real 0');c.p.drawText(x,y+100,'Real 1')
     c.font(9);c.p.setPen(QPen(INK));c.p.drawText(x+3,y+145,'FP = %s | FN = %s'%(m['fp'],m['fn']))
 
 
@@ -191,7 +169,7 @@ def featurebars(c, features, x, y, w, colour=MODEL_RF, maxrows=10):
     mx=max(float(z['importance']) for z in subset) or 1
     for i,item in enumerate(subset):
         yy=y+i*34
-        c.font(8);c.p.setPen(QPen(INK))
+        c.font(9);c.p.setPen(QPen(INK))
         label=str(item['fitur'])[:31]
         c.p.drawText(int(x),int(yy),label)
         bar_x=x+240;bar_w=w-280
@@ -212,7 +190,13 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
         status_kind=('unknown' if not has_test or status.startswith('BELUM DAPAT DINILAI')
                      else 'bad' if status.startswith('BELUM LAYAK')
                      else 'good' if status.startswith('LAYAK') else 'attention')
-        c.note(status,kind=status_kind)
+        verdict='BELUM DAPAT DINILAI' if not has_test else status.replace('_',' ').capitalize()
+        c.line(verdict,19,True,NAVY,space=36)
+        c.note('Belum ada data uji GOLD independen; angka TRAIN tidak mengukur kinerja pada pasangan baru.'
+               if not has_test else status.replace('_',' ').capitalize(),kind=status_kind)
+        c.section('Tindakan prioritas')
+        for i,action in enumerate(evaldata.get('rekomendasi',[])[:3],1):
+            c.para('T%d. %s'%(i,action),size=9,leading=18)
         c.section('Data yang digunakan')
         rows=[['Model terpilih',selected],['Status data GOLD',str(evaldata.get('jumlah_gold',0))+' pasangan'],
             ['SILVER (hasil aturan)',str(evaldata.get('jumlah_silver',0))],
@@ -238,7 +222,7 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
                     rows.append([split,str(m['n']),fmt(m['precision']),fmt(m['recall']),
                         fmt(m['f1']),fmt(m['accuracy']),fmt(m.get('auc_roc'),'f3'),fmt(m.get('average_precision'),'f3')])
             widths=[90,65,105,102,89,95,105,c.cw-(90+65+105+102+89+95+105)]
-            c.table(['Split','n','Precision','Recall','F1','Accuracy','ROC-AUC','AP'],rows,widths,row_height=34,size=8)
+            c.table(['Split','n','Precision','Recall','F1','Accuracy','ROC-AUC','AP'],rows,widths,row_height=34,size=9)
             tests=detail['split'].get('TEST')
             if tests:
                 c.para('TEST: prediksi positif %d | FP %d | FN %d | Brier %.3f (baseline %.3f) | batas bawah Precision CI95 %s.'%
@@ -251,7 +235,7 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
             c.new('Penilaian Otomatis per Metrik','Patokan di bawah adalah panduan kebijakan, bukan izin otomatis untuk pemaduan Level 1')
             c.table(['Metrik','Hasil TEST','Patokan operator','Interpretasi'],
                     [[z['metrik'],z['nilai'],z['patokan'],z['interpretasi']] for z in judgements],
-                    [170,110,260,c.cw-540],row_height=40,size=8)
+                    [170,110,260,c.cw-540],row_height=40,size=9)
             c.note('Periksa terutama Precision, jumlah FP, dan batas bawah kepercayaan Precision. Kategori MEMADAI pada metrik lain bukan izin untuk menggabungkan tanpa audit konflik pasangan.',True)
         test_models=[(name,x['split'].get('TEST')) for name,x in models.items() if x['split'].get('TEST')]
         if test_models:
@@ -276,7 +260,7 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
             c.new('Kalibrasi dan fitur penting','Skor AI bukan otomatis probabilitas benar tanpa pengecekan kalibrasi')
             c.section('Kalibrasi probabilitas pada GOLD test')
             calibr=[(name,model_colour(name),m['kurva'].get('kalibrasi',{})) for name,m in test_models]
-            plot(c,c.ml,c.y,c.cw,320,calibr,'Skor rata-rata','Proporsi cocok')
+            plot(c,c.ml,c.y,c.cw,320,calibr,'Skor rata-rata','Proporsi cocok',diagonal=True)
             c.y+=385
             c.para('Idealnya titik berada dekat diagonal y=x. Brier Score lebih kecil lebih baik; bandingkan dengan baseline prediksi konstan prevalensi pada GOLD test.')
             c.section('Feature importance model terpilih')

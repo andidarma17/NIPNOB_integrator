@@ -6,37 +6,38 @@ decision. Keep those meanings separate even when a chart has only one series.
 from qgis.PyQt.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
 
 
-NAVY = QColor('#1E2250')
-INK = QColor('#1B1F33')
-MUTED = QColor('#52636F')
-GRID = QColor('#D5D9E4')
-TINT = QColor('#F3F4F9')
-BPN = QColor('#3A3F9E')
-PBB = QColor('#A36A00')
-LEVEL_1 = QColor('#0B7285')
-LEVEL_2 = QColor('#8F7A9E')
-LEVEL_2_TEXT = QColor('#5E4B70')
-NO_PAIR = QColor('#AEBBC7')
-NEUTRAL_EDGE = QColor('#8696A5')
-OVERLAP = QColor('#B5173A')
+NAVY = QColor('#243B76')
+INK = QColor('#202831')
+MUTED = QColor('#44515C')
+GRID = QColor('#CED4D9')
+TINT = QColor('#F2F4F5')
+BPN = QColor('#243B76')
+PBB = QColor('#9AA9B2')
+PBB_EDGE = QColor('#44515C')
+LEVEL_1 = QColor('#096B63')
+LEVEL_2 = QColor('#D4D9DD')
+LEVEL_2_TEXT = QColor('#35414A')
+NO_PAIR = QColor('#E4E8EB')
+NEUTRAL_EDGE = QColor('#7D8B95')
+OVERLAP = QColor('#A42C3A')
 
-GOOD_TEXT = QColor('#14614F')
-GOOD_BG = QColor('#E6F4EF')
-ATTENTION_TEXT = QColor('#7A4B00')
-ATTENTION_BG = QColor('#FFF3D6')
-BAD_TEXT = QColor('#9B1C1C')
-BAD_BG = QColor('#FDECEC')
-UNKNOWN_TEXT = QColor('#4A5560')
-UNKNOWN_BG = QColor('#EDF0F2')
-CAUTION_TEXT = QColor('#7A1F1F')
-CAUTION_BG = QColor('#FFF1EE')
+GOOD_TEXT = QColor('#096B63')
+GOOD_BG = QColor('#EAF3F1')
+ATTENTION_TEXT = QColor('#35414A')
+ATTENTION_BG = QColor('#EEF1F3')
+BAD_TEXT = QColor('#922536')
+BAD_BG = QColor('#F9EBED')
+UNKNOWN_TEXT = QColor('#35414A')
+UNKNOWN_BG = QColor('#EEF1F3')
+CAUTION_TEXT = QColor('#922536')
+CAUTION_BG = QColor('#F9EBED')
 
 # Additional roles absent from the supplied palette. They are intentionally
 # distinct from dataset and level colours.
-GAP = QColor('#A65317')
-INVALID = QColor('#7A4594')
-MODEL_RF = QColor('#7B2E68')
-MODEL_XGB = QColor('#176B58')
+GAP = QColor('#788892')
+INVALID = QColor('#53636E')
+MODEL_RF = QColor('#096B63')
+MODEL_XGB = QColor('#202831')
 
 _BRUSHES = {}
 
@@ -46,16 +47,17 @@ def hatch_brush(colour, role, alpha=255):
     key = (colour.name(), role, alpha)
     if key in _BRUSHES:
         return _BRUSHES[key]
-    tile, step, width = (24, 8, 2) if role == 'pbb' else (26, 13, 3)
+    tile, step, width = (24, 8, 2) if role == 'pbb-map' else (26, 13, 3)
     pixmap = QPixmap(tile, tile)
     pixmap.fill(QColor(0, 0, 0, 0))
     painter = QPainter(pixmap)
     base = QColor(colour)
     base.setAlpha(alpha)
     painter.fillRect(0, 0, tile, tile, base)
-    painter.setPen(QPen(QColor(255, 255, 255, 140), width))
+    hatch = QColor(53, 65, 74, 140) if role == 'pbb-map' else QColor(53, 65, 74, 120)
+    painter.setPen(QPen(hatch, width))
     for offset in range(-tile * 2, tile * 3, step):
-        if role == 'pbb':
+        if role == 'pbb-map':
             painter.drawLine(offset, 0, offset - tile, tile)
         else:
             painter.drawLine(offset, 0, offset + tile, tile)
@@ -66,7 +68,7 @@ def hatch_brush(colour, role, alpha=255):
 
 
 def fill_for(colour, role=None, alpha=255):
-    if role in ('pbb', 'level2'):
+    if role in ('pbb-map', 'level2-map'):
         return hatch_brush(colour, role, alpha)
     plain = QColor(colour)
     plain.setAlpha(alpha)
@@ -77,7 +79,7 @@ def series_style(name):
     if name == 'BPN' or name.startswith('BPN '):
         return BPN, None
     if name == 'PBB' or name.startswith('PBB '):
-        return PBB, 'pbb'
+        return PBB, None
     return NAVY, None
 
 
@@ -86,11 +88,11 @@ def category_style(label):
     if 'level 1' in title:
         return LEVEL_1, None
     if 'level 2' in title:
-        return LEVEL_2, 'level2'
+        return LEVEL_2, None
     if title.startswith('bpn -'):
         return BPN, None
     if title.startswith('pbb -'):
-        return PBB, 'pbb'
+        return PBB, None
     if title.startswith('tidak cocok'):
         return BAD_TEXT, None
     if title.startswith('cocok'):
@@ -104,7 +106,7 @@ def map_style(label, colour):
     """Resolve fill, hatch, and edge without confusing dataset and status."""
     name = str(label).lower()
     if 'level 2' in name:
-        return LEVEL_2, 'level2', LEVEL_2_TEXT
+        return LEVEL_2, 'level2-map', LEVEL_2_TEXT
     if 'level 1' in name:
         return LEVEL_1, None, LEVEL_1
     if 'overlap' in name:
@@ -114,7 +116,7 @@ def map_style(label, colour):
     if 'invalid' in name:
         return INVALID, None, INVALID
     if name.startswith('pbb diverifikasi'):
-        return PBB, 'pbb', PBB
+        return PBB, 'pbb-map', PBB_EDGE
     if name.startswith('bpn diverifikasi'):
         return BPN, None, BPN
     return NO_PAIR, None, NEUTRAL_EDGE
@@ -122,9 +124,9 @@ def map_style(label, colour):
 
 def assessment_style(kind):
     return {
-        'good': (GOOD_TEXT, GOOD_BG, '✓'),
-        'attention': (ATTENTION_TEXT, ATTENTION_BG, '▲'),
-        'bad': (BAD_TEXT, BAD_BG, '✕'),
-        'unknown': (UNKNOWN_TEXT, UNKNOWN_BG, '?'),
-        'caution': (CAUTION_TEXT, CAUTION_BG, '!'),
+        'good': (INK, TINT, 'Catatan'),
+        'attention': (INK, TINT, 'Catatan'),
+        'bad': (CAUTION_TEXT, CAUTION_BG, 'Peringatan'),
+        'unknown': (INK, TINT, 'Catatan'),
+        'caution': (CAUTION_TEXT, CAUTION_BG, 'Peringatan'),
     }[kind]

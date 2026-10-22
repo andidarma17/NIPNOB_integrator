@@ -7,36 +7,23 @@
 
 ---
 
-## Redesain aktif: Palet D · Indigo–Safron
+## Redesain aktif: laporan audit editorial
 
-| Peran | Hex | Penggunaan |
+Mode baca: pembaca mendapat putusan indikatif, angka pembanding, tiga tindakan terurut, lalu bukti rinci. Ringkasan selalu satu halaman. Grafik dan peta mengikuti isi data; kategori nol dan halaman visual kosong tidak ditambahkan. Indikator lengkap berada di lampiran, sementara CSV tetap menjadi rujukan record penuh.
+
+### Sistem visual
+
+| Peran | Token | Aturan |
 |---|---|---|
-| Navy / ink / muted | `#1E2250` / `#1B1F33` / `#52636F` | Pita, judul dan tabel / isi / keterangan |
-| Grid / tint | `#D5D9E4` / `#F3F4F9` | Bingkai dan sumbu / pita header dan zebra |
-| BPN / PBB | `#3A3F9E` / `#A36A00` | Asal data; PBB diarsir putih 135° |
-| Level 1 / Level 2 | `#0B7285` / `#8F7A9E` | Pemaduan otomatis / butuh studio; Level 2 diarsir putih 45°, teks `#5E4B70` |
-| Bidang netral / overlap | `#AEBBC7` / `#B5173A` | Peta QA; tepi bidang netral `#8696A5` |
-| Gap / invalid awal | `#A65317` / `#7A4594` | Peran peta QA yang belum ditentukan dalam palet awal |
-| RandomForest / XGBoost | `#7B2E68` / `#176B58` | Seri model Modul 4, terpisah dari warna dataset |
+| Struktur/BPN | `#243B76` | Judul, header tabel, data BPN |
+| Keputusan Level 1 | `#096B63` | Pasangan otomatis; jangan dipakai untuk PBB |
+| Peringatan/overlap | `#A42C3A` | Risiko yang perlu ditelaah |
+| PBB/Level 2 | abu-abu berbeda luminans | PBB `#9AA9B2`, Level 2 `#D4D9DD` dengan tepi/teks gelap |
+| Teks dan garis | `#202831`, `#44515C`, `#CED4D9` | Hierarki tipografi dan grid cetak |
 
-Status memakai simbol dan teks: baik ✓ `#14614F`/`#E6F4EF`, perlu perhatian ▲
-`#7A4B00`/`#FFF3D6`, tidak memadai ✕ `#9B1C1C`/`#FDECEC`, belum dapat
-dinilai ? `#4A5560`/`#EDF0F2`, dan peringatan ! `#7A1F1F`/`#FFF1EE`.
-Warna dataset tidak dipakai untuk status atau Level. Level 2 tidak menggunakan merah.
+Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header halaman berupa garis dan informasi versi/input; tanpa pita dekoratif. Isi memakai kalimat langsung dalam bahasa Indonesia. Callout hanya **Catatan** dan **Peringatan**. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
 
-Kedua renderer sekarang memakai pita navy dan header tint yang sama, judul dapat
-membungkus menurut lebar nyata font, tabel memakai pemotongan berdasar metrik font,
-angka diratakan ke kanan pada tabel utama, dan legenda peta diletakkan di atas bingkai.
-Halaman peta memakai kanvas lebih luas dan pemotongan gambar pada bingkai; status
-Modul 4 tanpa GOLD tidak menghasilkan halaman penilaian dan confusion matrix kosong.
-
-Ringkasan awal setiap modul sekarang menyebut temuan terukur dan satu prioritas
-operator sebelum tabel indikator. Nama indikator diubah dari kunci internal menjadi
-label baca. Halaman akhir hanya memuat tindakan yang relevan dengan hasil saat itu;
-rekomendasi nol-kasus tidak menciptakan pekerjaan fiktif. Peta mencantumkan CRS
-koordinat yang benar-benar dipakai dan skala grafis dalam meter, dihitung dari
-koordinat proyeksi saat ekspor. Halaman Modul 4 tanpa GOLD test tidak memuat
-panduan metrik umum yang tidak dapat diterapkan pada data tersebut.
+Palet D Indigo–Safron di bawah adalah **riwayat desain**, bukan token aktif. Perubahan ke palet tiga hue mengikuti `TODO_REDESIGN.md` dan konteks cetak hitam-putih.
 
 ---
 
