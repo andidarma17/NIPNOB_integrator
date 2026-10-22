@@ -191,6 +191,10 @@ class Report:
         if self.crs and not self.metadata.get('crs'):facts.append('CRS: '+self.crs)
         for item in facts:self.text(item,9,color=MUTED,space=18)
         if not facts:self.text('Metadata input tidak disertakan oleh pemanggil laporan.',9,color=MUTED)
+        self.sub('Istilah ringkas')
+        self.text('NIB: identitas bidang BPN. NOP: identitas objek pajak PBB. Level 1: pasangan lolos seluruh aturan. Level 2: perlu verifikasi studio.',9,space=19)
+        if self.num in (5,6):
+            self.text('GOLD: label dengan bukti operator. SILVER: label hasil aturan, bukan bukti independen.',9,space=19)
     def footer_recommendations(self,items,appendix=None):
         # The three most urgent actions are already on page one. This closing
         # section keeps provenance and the full indicator audit without repeating them.

@@ -11,12 +11,13 @@ Acuan: `TODO_REDESIGN.md`. Laporan yang ditinjau adalah hasil render QGIS 3.40.5
 - Modul 4 tanpa GOLD test menampilkan **BELUM DAPAT DINILAI** pada halaman pertama. TRAIN tetap diberi label diagnostik. Referensi PR dan garis diagonal kalibrasi tampil bila data TEST tersedia.
 - Modul 5 mencatat gerbang promosi untuk tiap kandidat ke `skor_kandidat.csv` (model, skor, ID unik, overlap, deviasi, margin, pesaing, dan ketersediaan). Tabel PDF memperlihatkan ringkasan gerbang kandidat teratas.
 - Modul 6 memuat semua keputusan dengan operator, waktu, sumber bukti, dan ID lengkap. Uji PDF dengan ID 18 digit menghasilkan dua kemunculan ID utuh pada ekstraksi teks.
-- Kasus kosong Modul 1 dan 3 menghasilkan satu halaman ringkasan tanpa grafik nol. Sebelas uji logika yang tersedia lulus.
+- Kasus kosong Modul 1 dan 3 menghasilkan satu halaman ringkasan tanpa grafik nol. Tiga belas uji logika dan kontras lulus.
+- `palette_review.png` memperlihatkan warna normal, simulasi protanopia, deuteranopia, tritanopia, dan abu-abu. BPN dan PBB tetap berbeda luminans; Level 2 dan tanpa pasangan dibantu arsiran/label. Kontras terukur: teks isi/putih 14,9:1; teks sekunder/putih 8,15:1; teks Level 2/isian 7,36:1; peringatan 7,14:1; putih/navy tabel 10,7:1. Simulasi memakai matriks prahitung Machado severity 1 dan bersifat perkiraan layar ([metode](https://colour.readthedocs.io/en/develop/_modules/colour/blindness/machado2009.html), [riset](https://pubmed.ncbi.nlm.nih.gov/19834201/)).
 
 ## Batas verifikasi saat ini
 
 - Footer sudah memuat nomor halaman, waktu WIB, versi, dan hash input bila tersedia. **Total halaman X/N belum dicetak** karena `QPdfWriter` menggambar halaman secara berurutan; ini membutuhkan pass render kedua atau pascaproses PDF yang tidak boleh menjadi dependensi baru plugin tanpa pengujian lintas QGIS.
 - Peta mengasumsikan CRS proyeksi meter untuk skala grafis. CRS geografis perlu penanganan skala geodesik tersendiri.
-- Simulasi deuteranopia, protanopia, dan tritanopia serta uji cetak fisik belum dijalankan. Palet memisahkan BPN/PBB terutama lewat luminans dan memakai bentuk/teks selain warna.
+- Simulasi layar sudah dibuat; **uji cetak fisik** dan pembacaan oleh pengguna dengan gangguan persepsi warna belum dijalankan. Simulasi tidak menggantikan uji pengguna.
 - QGIS 4/Qt6, Windows, Linux, dan beban 100 ribu record belum tersedia untuk uji langsung. Kode enum Qt5/Qt6 disiapkan, tetapi belum dianggap terverifikasi.
-- Inset peta ekstrem dan glosarium lampiran masih terbuka. Detail tabel kasus Modul 2 mempertahankan halaman lanjutan agar ID dan bukti tidak dipotong.
+- Inset peta ekstrem masih terbuka; istilah ringkas sudah tercantum pada halaman ringkasan modul utama. Detail tabel kasus Modul 2 mempertahankan halaman lanjutan agar ID dan bukti tidak dipotong.

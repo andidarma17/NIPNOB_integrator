@@ -151,7 +151,7 @@ def plot(c,x,y,width,height,series,xname,yname,baseline=None,diagonal=False):
 def confusion(c,name,m,x,y,block=64):
     c.font(11,True);c.p.setPen(QPen(NAVY));c.p.drawText(x,y,name)
     y+=25
-    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x+64,y,'Pred 0');c.p.drawText(x+128,y,'Pred 1')
+    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x+64,y,'Pred. 0');c.p.drawText(x+128,y,'Pred. 1')
     y+=13
     for row in range(2):
         for col in range(2):
@@ -159,7 +159,7 @@ def confusion(c,name,m,x,y,block=64):
             bx=x+60+col*block;by=y+row*block
             c.p.fillRect(bx,by,block-3,block-3, GOOD_BG if row==col else BAD_BG)
             c.font(11,True);c.p.setPen(QPen(INK));c.p.drawText(bx+15,by+34,str(v))
-    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x,y+36,'Real 0');c.p.drawText(x,y+100,'Real 1')
+    c.font(9);c.p.setPen(QPen(MUTED));c.p.drawText(x,y+36,'Aktual 0');c.p.drawText(x,y+100,'Aktual 1')
     c.font(9);c.p.setPen(QPen(INK));c.p.drawText(x+3,y+145,'FP = %s | FN = %s'%(m['fp'],m['fn']))
 
 
@@ -222,7 +222,7 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
                     rows.append([split,str(m['n']),fmt(m['precision']),fmt(m['recall']),
                         fmt(m['f1']),fmt(m['accuracy']),fmt(m.get('auc_roc'),'f3'),fmt(m.get('average_precision'),'f3')])
             widths=[90,65,105,102,89,95,105,c.cw-(90+65+105+102+89+95+105)]
-            c.table(['Split','n','Precision','Recall','F1','Accuracy','ROC-AUC','AP'],rows,widths,row_height=34,size=9)
+            c.table(['Data','n','Precision','Recall','F1','Accuracy','ROC-AUC','AP'],rows,widths,row_height=34,size=9)
             tests=detail['split'].get('TEST')
             if tests:
                 c.para('TEST: prediksi positif %d | FP %d | FN %d | Brier %.3f (baseline %.3f) | batas bawah Precision CI95 %s.'%
