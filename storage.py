@@ -49,5 +49,3 @@ def zip_csv(output_dir, tables, zip_name='rekap_csv.zip'):
             z.writestr(name if name.endswith('.csv') else name+'.csv',
                        '\ufeff'+io.getvalue())
     return str(path)
-
-
