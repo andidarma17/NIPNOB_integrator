@@ -30,6 +30,14 @@ angka diratakan ke kanan pada tabel utama, dan legenda peta diletakkan di atas b
 Halaman peta memakai kanvas lebih luas dan pemotongan gambar pada bingkai; status
 Modul 4 tanpa GOLD tidak menghasilkan halaman penilaian dan confusion matrix kosong.
 
+Ringkasan awal setiap modul sekarang menyebut temuan terukur dan satu prioritas
+operator sebelum tabel indikator. Nama indikator diubah dari kunci internal menjadi
+label baca. Halaman akhir hanya memuat tindakan yang relevan dengan hasil saat itu;
+rekomendasi nol-kasus tidak menciptakan pekerjaan fiktif. Peta mencantumkan CRS
+koordinat yang benar-benar dipakai dan skala grafis dalam meter, dihitung dari
+koordinat proyeksi saat ekspor. Halaman Modul 4 tanpa GOLD test tidak memuat
+panduan metrik umum yang tidak dapat diterapkan pada data tersebut.
+
 ---
 
 ## 1. Tujuan dan pembaca laporan
