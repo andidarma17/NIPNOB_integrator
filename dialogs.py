@@ -198,7 +198,7 @@ class ToolDialog(QDialog):
             files.append(self.persist(layer_from_records(rows,layer.crs(),schema,tag+' M1'),tag.lower()+'_audit_atribut',out))
         archive=zip_csv(out,tables)
         pdf=report1(out,datasets[0],datasets[1],stats,tables,
-                    self.val('min_area'),self.val('max_area'))
+                    self.val('min_area'),self.val('max_area'),crs=b.crs().authid())
         reports={'pdf':pdf,'csv_zip':archive}
         return files+[reports['pdf'],reports['csv_zip']]
     def run2(self,out):
@@ -232,7 +232,7 @@ class ToolDialog(QDialog):
                      'Gap = area kosong tertutup, bukan semua ruang kosong di luar batas bidang.',
                      'Irisan overlap internal ditandai; batas persil belum dikoreksi.']+logs[:10],
                     tables['bpn_overlap.csv'],tables['pbb_overlap.csv'],
-                    tables['bpn_gap_tertutup.csv'])
+                    tables['bpn_gap_tertutup.csv'],crs=b.crs().authid())
         reports={'pdf':pdf,'csv_zip':archive}
         return results+[reports['pdf'],reports['csv_zip']]
     def prepare3(self):
@@ -285,7 +285,7 @@ class ToolDialog(QDialog):
                      'Seleksi overlap terhadap luas geometri BPN menggunakan ambang %.1f%%.' % options['min_overlap'],
                      'Satu NIB/NOP hanya dapat menerima satu padanan yang lolos ambang.',
                      'Kesamaan luas tertulis harus melewati ambang %.1f%%.' % options['min_sim']],
-                    logs,bpn_all=br,pbb_all=pr,gaps=hb)
+                    logs,bpn_all=br,pbb_all=pr,gaps=hb,crs=b.crs().authid())
         reports={'pdf':pdf,'csv_zip':archive}
         return exported+[reports['pdf'],reports['csv_zip']]
     def prepared_ml(self):
@@ -451,6 +451,7 @@ class ToolDialog(QDialog):
                      'AI tanpa evaluasi GOLD independen hanya memberikan rekomendasi studio.',
                      'Ambang skor minimum %.2f, selisih kandidat %.2f.' %
                        (self.val('confidence'),self.val('margin')),
-                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.'],meta,logs)
+                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.'],meta,logs,
+                    crs=b.crs().authid())
         report={'pdf':pdf,'csv_zip':archive}
         return paths+[report['pdf'],report['csv_zip']]
