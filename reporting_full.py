@@ -39,8 +39,20 @@ def nice(value):
     return str(value)
 
 
+def metric_label(key):
+    """Keep domain abbreviations while removing internal field names from the PDF."""
+    label=str(key).replace('_',' ').replace('geom ','geometri ')
+    if label[:4].lower() in ('bpn ','pbb '):
+        return label[:3].upper()+' · '+label[4:].capitalize()
+    return label[0].upper()+label[1:] if label else label
+
+
+def count_text(value):
+    return format(int(value), ',').replace(',', '.')
+
+
 class Report:
-    def __init__(self, folder, modnum, title):
+    def __init__(self, folder, modnum, title, crs=None):
         self.path=Path(folder)/('laporan_modul%d.pdf'%modnum)
         self.pdf=QPdfWriter(str(self.path));set_pdf_a4(self.pdf);self.pdf.setResolution(120)
         self.p=QPainter(self.pdf)
@@ -48,8 +60,8 @@ class Report:
             raise RuntimeError('Tidak dapat membuat PDF: '+str(self.path))
         self.w=self.pdf.width();self.h=self.pdf.height();self.l=62;self.r=62
         self.cw=self.w-self.l-self.r;self.bottom=self.h-108
-        self.title=title;self.num=modnum;self.page=0;self.y=0
-        self.start('IKHTISAR DAN HASIL UTAMA')
+        self.title=title;self.num=modnum;self.page=0;self.y=0;self.crs=crs
+        self.start(title)
     def font(self,size=10,bold=False):
         f=QFont('DejaVu Sans',size);f.setBold(bold);self.p.setFont(f)
     def wrapped(self,s,width):
@@ -136,30 +148,31 @@ class Report:
             self.y+=heights
         if len(rows)>limit:self.text('Tabel ditampilkan %d dari %d baris; data lengkap tersedia pada rekap_csv.zip.'%(limit,len(rows)),8,color=MUTED)
         self.y+=16
-    def intro(self,stats,notes,warning=None):
-        self.text(self.title,13,True,NAVY)
-        self.sub('Ringkasan indikator utama')
-        rows=[(k,nice(v)) for k,v in stats.items()]
+    def intro(self,stats,notes,warning=None,headline=None,next_step=None):
+        if headline:self.text(headline,14,True,NAVY,space=29)
+        if next_step:self.text('Prioritas: '+next_step,10,color=INK,space=22)
+        self.sub('Angka pemeriksaan')
+        rows=[(metric_label(k),nice(v)) for k,v in stats.items()]
         self.table(['Indikator','Hasil'],rows,[self.cw*.64,self.cw*.36],limit=22)
         if 'Status AI' in stats:
             status=str(stats['Status AI'])
             kind='unknown' if status in ('PREVIEW_ONLY','NO_MODEL') else 'attention'
             self.notice('Status AI: '+status+'. Periksa hasil evaluasi GOLD dan aturan promosi sebelum menerima pasangan AI.',kind)
-        self.sub('Metode dan parameter')
+        self.sub('Dasar pemeriksaan')
         for msg in notes:self.text('- '+msg,9,max_chars=110,space=21)
         if warning:self.sub('Batasan interpretasi');self.notice(warning,'attention')
     def footer_recommendations(self,items,appendix=None):
-        self.start('KESIMPULAN DAN TINDAK LANJUT')
+        self.start('Tindakan berikutnya')
         for i,s in enumerate(items,1):
             self.sub('%d. %s'%(i,s[0]))
             self.text(s[1],10,max_chars=103)
         if appendix:
             self.sub('Arsip hasil')
             for s in appendix:self.text('- '+str(s),9)
-        self.sub('Catatan umum')
-        self.notice('Penanda otomatis merupakan indikasi pemeriksaan, bukan bukti hukum atas status bidang atau kewajiban pajak. Konfirmasi menggunakan sumber administrasi resmi.','caution')
+        self.sub('Batas penggunaan')
+        self.notice('Hasil otomatis menandai kasus untuk diperiksa. Keputusan bidang dan pajak tetap harus didasarkan pada sumber administrasi resmi.','caution')
     def figpage(self,number,title,description):
-        self.start('GRAFIK %d - %s'%(number,title),description)
+        self.start(title,description)
     def no_data(self,message):
         self.notice('Visualisasi tidak tersedia: '+message,'unknown')
     def category_marker(self,x,y,label):
@@ -397,19 +410,42 @@ class Report:
                 if len(qpoly)>=3:self.p.drawPolygon(qpoly)
         self.p.setBrush(QBrush())
         self.p.restore()
-        self.y=bottom+29
-        self.text('Peta indikatif tanpa peta dasar. Koordinat mengikuti CRS layer; pola dan warna menunjukkan kategori. Angka legenda menghitung fitur yang digambar (maksimal %d per kategori). Periksa lokasi detail pada layer QGIS.'%max_features,9,color=MUTED)
+        # All map coordinates are projected metres. The graphic scale remains
+        # valid if a PDF viewer or printer resizes the page.
+        target_metres=120/scale
+        power=10**math.floor(math.log10(target_metres))
+        bar_metres=min((unit*power for unit in (1,2,5,10)),
+                       key=lambda value:abs(value-target_metres))
+        bar_px=bar_metres*scale
+        sx=left;sy=bottom+22
+        self.p.setPen(QPen(NAVY,1))
+        self.p.fillRect(int(sx),int(sy),int(bar_px/2),8,NAVY)
+        self.p.drawRect(int(sx),int(sy),int(bar_px),8)
+        self.font(8);self.p.setPen(QPen(MUTED))
+        self.p.drawText(int(sx),int(sy+25),'0')
+        self.p.drawText(int(sx+bar_px-10),int(sy+25),'%g m'%bar_metres)
+        crs_label='CRS peta: '+str(self.crs) if self.crs else 'CRS peta: tidak tercatat'
+        self.p.drawText(int(right-245),int(sy+25),crs_label)
+        self.y=bottom+72
+        self.text('Peta indikatif tanpa peta dasar. Legenda menghitung fitur yang digambar (maksimal %d per kategori). Periksa batas dan lokasi pada layer QGIS.'%max_features,9,color=MUTED)
     def close(self):
         self.p.end();return str(self.path)
 
 
-def report1(folder, b_info,p_info, stats, tables, min_area,max_area):
+def report1(folder, b_info,p_info, stats, tables, min_area,max_area,crs=None):
     """b_info/p_info=(records, identity_field, area_field) after qa_attribute."""
-    rep=Report(folder,1,'Pemeriksaan kelengkapan atribut')
+    rep=Report(folder,1,'Pemeriksaan kelengkapan atribut',crs)
+    missing_b=stats.get('BPN identitas_kosong',0)
+    missing_p=stats.get('PBB identitas_kosong',0)
+    headline=('%s identitas BPN dan %s identitas PBB kosong.'%
+              (count_text(missing_b),count_text(missing_p)) if missing_b or missing_p else
+              'Tidak ditemukan identitas kosong pada BPN maupun PBB.')
+    priority=('cocokkan identitas kosong dengan sumber administrasi.' if missing_b or missing_p
+              else 'periksa duplikat dan luas tertulis sebelum melanjutkan.')
     rep.intro(stats,[f'Ambang awal luas: {min_area:g} - {max_area:g} m2.',
              'Identitas duplikat dihitung dengan mengabaikan nilai kosong.',
              'Kolom luas dapat bertipe teks selama nilainya dapat dikonversi menjadi angka.'],
-             'Nilai luas di luar ambang perlu verifikasi; bukan otomatis salah.')
+             'Nilai luas di luar ambang perlu verifikasi; bukan otomatis salah.',headline,priority)
     b,bi,ba=b_info;p,pi,pa=p_info
     bs=lambda key:stats.get('BPN '+key,0)
     ps=lambda key:stats.get('PBB '+key,0)
@@ -441,29 +477,55 @@ def report1(folder, b_info,p_info, stats, tables, min_area,max_area):
     rep.figpage(8,'Kategori masalah luas','Kekosongan/non-numerik dipisah dari nol, negatif, nilai kecil, dan nilai besar.')
     rep.bar(['Kosong / tidak numerik','Nol / negatif','Di bawah ambang','Di atas ambang'],
             [('BPN',counts[0]),('PBB',counts[1])])
-    rep.footer_recommendations([
-        ('Periksa NIB/NOP kosong atau duplikat','Pulihkan identitas dari basis administrasi resmi sebelum pemaduan otomatis.'),
-        ('Lengkapi luas tertulis','Utamakan kolom luas kosong/non-numerik, bukan menggantinya dengan luas geometri tanpa bukti.'),
-        ('Tinjau luas ekstrem','Kaji bidang di luar ambang melalui layer dan dokumen pendukung, bukan menghapus otomatis.')],
+    actions=[]
+    if missing_b or missing_p:
+        actions.append(('Lengkapi identitas kosong',
+            '%s record BPN dan %s record PBB perlu dicocokkan dengan sumber administrasi sebelum pemaduan.'%
+            (count_text(missing_b),count_text(missing_p))))
+    dup_b=stats.get('BPN record_duplikat',0);dup_p=stats.get('PBB record_duplikat',0)
+    if dup_b or dup_p:
+        actions.append(('Telaah identitas duplikat',
+            '%s record BPN dan %s record PBB memakai identitas yang berulang; periksa apakah pengulangan sah.'%
+            (count_text(dup_b),count_text(dup_p))))
+    area_b=stats.get('BPN record_luas_bermasalah',0);area_p=stats.get('PBB record_luas_bermasalah',0)
+    if area_b or area_p:
+        actions.append(('Periksa luas tertulis',
+            '%s record BPN dan %s record PBB memiliki luas kosong, tak numerik, atau di luar ambang. Bandingkan dengan dokumen sumber.'%
+            (count_text(area_b),count_text(area_p))))
+    if not actions:actions.append(('Lanjutkan pemeriksaan spasial',
+        'Indikator atribut yang diperiksa tidak menandai kasus; periksa geometri sebelum menentukan pasangan.'))
+    rep.footer_recommendations(actions,
         ['rekap_csv.zip: rincian kolom kosong, identitas duplikat, dan luas bermasalah.', 'Layer audit atribut disimpan dalam format spasial yang dipilih.'])
     return rep.close()
 
 
-def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps):
-    r=Report(folder,2,'Pemeriksaan dan perbaikan kualitas spasial')
-    r.intro(stats,notes,'Gap baru adalah kandidat area kosong tertutup; bukan NIB baru terverifikasi. Overlap internal ditandai, belum dikoreksi secara administratif.')
+def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None):
+    r=Report(folder,2,'Pemeriksaan dan perbaikan kualitas spasial',crs)
+    overlap_count=stats.get('bpn_overlap',0)+stats.get('pbb_overlap',0)
+    gap_count=stats.get('bpn_gap_baru',0)+stats.get('pbb_gap_baru',0)
+    invalid_count=stats.get('bpn_geom_invalid',0)+stats.get('pbb_geom_invalid',0)
+    empty_geom_count=stats.get('bpn_geom_kosong',0)+stats.get('pbb_geom_kosong',0)
+    headline=('%s record terindikasi overlap internal pada BPN dan PBB.'%count_text(overlap_count)
+              if overlap_count else '%s geometri awal invalid dan %s kosong.'%
+              (count_text(invalid_count),count_text(empty_geom_count))
+              if invalid_count or empty_geom_count else '%s kandidat gap tercatat; tidak ada overlap internal yang ditandai.'%count_text(gap_count)
+              if gap_count else 'Tidak ada overlap internal atau gap baru yang ditandai.')
+    priority=('telaah irisan overlap dengan dokumen sumber.' if overlap_count else
+              'periksa geometri yang invalid atau kosong.' if invalid_count or empty_geom_count else
+              'verifikasi kandidat gap.' if gap_count else 'lanjutkan ke pemaduan berbasis aturan.')
+    r.intro(stats,notes,'Gap baru adalah kandidat area kosong tertutup; bukan NIB baru terverifikasi. Overlap internal ditandai, belum dikoreksi secara administratif.',headline,priority)
     cats=['Geometri kosong','Geometri invalid','Geometri diperbaiki','Bidang overlap','Gap ditambahkan']
     get=lambda tag:[stats.get(tag+'_'+k,0) for k in ['geom_kosong','geom_invalid','geom_fixed','overlap','gap_baru']]
     r.figpage(1,'Indikator kualitas spasial','Perbandingan jumlah kasus BPN dan PBB.')
     r.bar(cats,[('BPN',get('bpn')),('PBB',get('pbb'))])
-    r.start('PETA 1 - KUALITAS BPN')
+    r.start('Kualitas spasial BPN')
     r.map([(b_rows,NO_PAIR,lambda x:not x['a'].get('overlap') and not x['a'].get('bid_tambah'),'Bidang lainnya'),
            (b_rows,OVERLAP,lambda x:bool(x['a'].get('overlap')),'Overlap'),
            (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Gap baru')], 'Distribusi bidang terindikasi bermasalah')
-    r.start('PETA 2 - KUALITAS PBB')
+    r.start('Kualitas spasial PBB')
     r.map([(p_rows,NO_PAIR,lambda x:not x['a'].get('overlap'),'Bidang lainnya'),
            (p_rows,OVERLAP,lambda x:bool(x['a'].get('overlap')),'Overlap')],'Distribusi objek PBB yang overlap')
-    r.start('PETA 3 - PERBAIKAN GEOMETRI')
+    r.start('Perbaikan geometri PBB')
     r.map([(p_rows,NO_PAIR,lambda z:not bool(z['a'].get('geom_invalid')),'PBB lainnya'),
            (p_rows,INVALID,lambda z:bool(z['a'].get('geom_invalid')),'Invalid awal / fixed')],
           'Poligon PBB yang teridentifikasi invalid sebelum perbaikan')
@@ -473,15 +535,15 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps):
         margin=max(biggest.width(),biggest.height())*9
         from qgis.core import QgsRectangle
         focus=QgsRectangle(biggest.xMinimum()-margin,biggest.yMinimum()-margin,biggest.xMaximum()+margin,biggest.yMaximum()+margin)
-        r.start('PETA 4 - DETAIL GAP BPN')
+        r.start('Lokasi kandidat gap BPN')
         r.map([(b_rows,NO_PAIR,lambda x:not bool(x['a'].get('bid_tambah')),'Bidang sekitar'),
                (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Kandidat gap')],
                'Perbesaran lokasi gap terpilih',focus=focus)
         r.text('Kandidat gap dengan luas terbesar: %.2f m2. Posisi hanya indikatif; periksa detail topologi di QGIS.'%max(g['geom'].area() for g in newg),9)
     else:
-        r.start('PETA 4 - DETAIL GAP BPN')
+        r.start('Lokasi kandidat gap BPN')
         r.no_data('Tidak ada poligon gap baru yang lolos ambang. Jumlah gap kecil tetap tersedia dalam CSV.')
-    r.start('RINCIAN OVERLAP DAN GAP')
+    r.start('Rincian overlap dan gap')
     r.sub('Overlap internal terbesar BPN')
     r.table(['Record A','Record B','Luas irisan m2'],[
         (z.get('record_a'),z.get('record_b'),z.get('luas_irisan_m2'))
@@ -493,17 +555,33 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps):
     r.sub('Gap tertutup yang terdeteksi')
     r.table(['ID','Luas m2','Ditambah'],[(z.get('gap_id'),z.get('luas_m2'),z.get('ditambahkan'))
             for z in sorted(gaps,key=lambda v:-float(v.get('luas_m2') or 0))[:18]])
-    r.footer_recommendations([
-        ('Validasi hasil perbaikan geometri','Periksa bentuk poligon yang mengalami perbaikan, termasuk potensi perubahan batas.'),
-        ('Telaah konflik overlap','Bandingkan bidang yang saling menutup dengan peta/dokumen resmi.'),
-        ('Verifikasi area gap tertutup','Bidang hasil delineasi hanya kandidat; tidak otomatis mendapat NIB.')],
+    actions=[]
+    fixed=stats.get('bpn_geom_fixed',0)+stats.get('pbb_geom_fixed',0)
+    invalid=stats.get('bpn_geom_invalid',0)+stats.get('pbb_geom_invalid',0)
+    missing_geom=stats.get('bpn_geom_kosong',0)+stats.get('pbb_geom_kosong',0)
+    if fixed:actions.append(('Periksa geometri yang diperbaiki',
+        '%s geometri diproses untuk perbaikan. Bandingkan batas sebelum dan sesudah pada layer QA.'%count_text(fixed)))
+    if invalid>fixed or missing_geom:actions.append(('Telaah geometri yang belum layak',
+        '%s geometri awal invalid dan %s geometri kosong tercatat. Pastikan kasus yang belum teratasi ditangani sebelum pemaduan.'%
+        (count_text(invalid),count_text(missing_geom))))
+    if overlap_count:actions.append(('Telaah overlap internal',
+        '%s record ditandai overlap. Bandingkan irisan terbesar dengan peta dan dokumen resmi.'%count_text(overlap_count)))
+    if gap_count:actions.append(('Verifikasi kandidat gap',
+        '%s poligon gap ditambahkan sebagai kandidat; belum menjadi bidang ber-NIB.'%count_text(gap_count)))
+    if not actions:actions.append(('Lanjutkan ke pemaduan berbasis aturan',
+        'Indikator spasial yang diperiksa tidak menandai kasus pada keluaran ini.'))
+    r.footer_recommendations(actions[:4],
         ['rekap_csv.zip: daftar pasangan overlap dan seluruh gap tertutup.', 'Layer QA BPN/PBB dapat dibuka kembali di QGIS.'])
     return r.close()
 
 
-def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None):
-    r=Report(folder,3,'Penentuan level pemaduan berbasis aturan')
-    r.intro(stats,notes,'Level 2 bukan pasangan salah: data dipisah untuk verifikasi studio. Operator harus menggunakan layer terbaru hasil perbaikan.')
+def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None,crs=None):
+    r=Report(folder,3,'Penentuan level pemaduan berbasis aturan',crs)
+    headline=('%s pasangan Level 1; %s BPN dan %s PBB memerlukan verifikasi studio.'%
+              (count_text(len(lev1)),count_text(len(lev2b)),count_text(len(lev2p))))
+    priority=('verifikasi record Level 2 di studio.' if lev2b or lev2p else
+              'tinjau pasangan Level 1 terhadap dokumen sumber.')
+    r.intro(stats,notes,'Level 2 bukan pasangan salah: data dipisah untuk verifikasi studio. Operator harus menggunakan layer terbaru hasil perbaikan.',headline,priority)
     r.figpage(1,'Distribusi level pemaduan','Jumlah pasangan Level 1 dan record yang memerlukan verifikasi studio.')
     r.bar(['Level 1','BPN Level 2','PBB Level 2'],[('Record',[len(lev1),len(lev2b),len(lev2p)])])
     whys=Counter(code.strip() for row in lev2b+lev2p for code in str(row['a'].get('kode_l2','')).split(';') if code.strip())
@@ -525,29 +603,49 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
     p_rows=pbb_all if pbb_all is not None else lev2p
     level1_pbb_ids={pair['record_pbb'] for pair in pairs if pair.get('status')=='LEVEL_1'}
     lev1p=[row for row in p_rows if row['idx'] in level1_pbb_ids]
-    r.start('PETA 1 - LEVEL BPN')
+    r.start('Level pemaduan BPN')
     r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
            'Distribusi pasangan otomatis dan bidang studio')
-    r.start('PETA 2 - LEVEL PBB')
+    r.start('Level pemaduan PBB')
     r.map([(lev2p,LEVEL_2,None,'PBB Level 2'),
            (lev1p,LEVEL_1,None,'PBB Level 1')],
            'Distribusi pasangan otomatis dan objek PBB untuk verifikasi studio')
-    r.start('REKAP PASANGAN DAN KANDIDAT')
+    r.start('Rekap pasangan dan kandidat')
     r.sub('Pasangan dengan overlap BPN terbesar')
     r.table(['NIB','NOP','Overlap BPN %','Overlap PBB %'],
             [(v.get('NIB',''),v.get('NOP',''),nice(v.get('overlap_bpn_pct')),nice(v.get('overlap_pbb_pct')))
              for v in sorted(pairs,key=lambda x:-(finite(x.get('overlap_bpn_pct')) or 0))[:20]])
-    r.footer_recommendations([
-        ('Periksa hubungan 1:N / N:1','Ambang overlap tidak otomatis menggugurkan bidang karena irisan kecil lain. Namun dua calon di atas ambang wajib diverifikasi.'),
-        ('Prioritaskan atribut kosong dan kesamaan luas','Bandingkan luas tertulis BPN–PBB; nilai kosong tidak boleh dianggap sama.'),
-        ('Gunakan output studio sebagai data label','Level 2 tidak boleh otomatis menjadi label negatif untuk AI.')],
+    actions=[]
+    if lev2b or lev2p:
+        top_reason=whys.most_common(1)
+        reason=(' Alasan terbanyak: %s (%s record).'%(top_reason[0][0],count_text(top_reason[0][1]))
+                if top_reason else '')
+        actions.append(('Verifikasi Level 2 di studio',
+            '%s BPN dan %s PBB belum memenuhi seluruh gerbang pemaduan.%s'%
+            (count_text(len(lev2b)),count_text(len(lev2p)),reason)))
+    conflicts_b=Counter(p.get('record_bpn') for p in pairs if p.get('record_bpn') is not None)
+    conflicts_p=Counter(p.get('record_pbb') for p in pairs if p.get('record_pbb') is not None)
+    conflict_count=sum(v>1 for v in conflicts_b.values())+sum(v>1 for v in conflicts_p.values())
+    if conflict_count:actions.append(('Telaah calon pasangan ganda',
+        '%s record memiliki lebih dari satu kandidat beririsan; periksa konflik 1:N atau N:1.'%count_text(conflict_count)))
+    if lev1:actions.append(('Tinjau pasangan Level 1',
+        '%s pasangan lolos aturan otomatis. Cocokkan dengan dokumen sumber sebelum keputusan administratif.'%count_text(len(lev1))))
+    if not actions:actions.append(('Periksa input dan ambang',
+        'Tidak ada pasangan Level 1 atau record Level 2 pada keluaran ini; pastikan layer dan parameter yang dipilih tepat.'))
+    r.footer_recommendations(actions,
         ['rekap_csv.zip: seluruh pasangan kandidat, overlap internal, gap, dan alasan Level 2.'])
     return r.close()
 
 
-def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,logs):
-    r=Report(folder,5,'Inference AI dan penentuan Level 1/2')
-    r.intro(stats,notes,'Status model dan sumber label GOLD/SILVER menentukan apakah AI boleh menambah Level 1. Skor tinggi saja tidak membuktikan kecocokan administratif.')
+def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,logs,crs=None):
+    r=Report(folder,5,'Inference AI dan penentuan Level 1/2',crs)
+    headline=('%s pasangan Level 1; %s di antaranya tambahan AI.'%
+              (count_text(len(lev1)),count_text(len(extras))))
+    priority=('gunakan skor AI hanya untuk urutan telaah studio.' if
+              str((model_meta or {}).get('status',stats.get('Status AI',''))) in ('PREVIEW_ONLY','NO_MODEL')
+              else 'audit keunikan NIB–NOP dan bukti setiap tambahan AI.' if extras
+              else 'telaah Level 2 dan kesiapan model sebelum penggunaan lanjut.')
+    r.intro(stats,notes,'Status model dan sumber label GOLD/SILVER menentukan apakah AI boleh menambah Level 1. Skor tinggi saja tidak membuktikan kecocokan administratif.',headline,priority)
     r.figpage(1,'Hasil klasifikasi','Perbandingan Level 1 baseline, tambahan AI, dan Level 2.')
     r.bar(['Level 1 aturan','Level 1 baru AI','BPN Level 2','PBB Level 2'],
           [('Jumlah',[max(0,len(lev1)-len(extras)),len(extras),len(lev2b),len(lev2p)])])
@@ -558,13 +656,13 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
         bins=[sum(1 for x in ss if x>=i/10 and (x<(i+1)/10 if i<9 else x<=1)) for i in range(10)]
         r.bar(['%02d-%02d'% (i*10,(i+1)*10) for i in range(10)],[('Kandidat',bins)])
     else:r.no_data('Model belum dipilih atau skor AI tidak tersedia.')
-    r.start('PETA 1 - LEVEL 1 DAN BPN STUDIO')
+    r.start('Hasil pemaduan BPN')
     r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
           'Hasil pemaduan menurut bidang BPN')
-    r.start('PETA 2 - PBB STUDIO')
+    r.start('Hasil pemaduan PBB')
     r.map([(lev2p,LEVEL_2,None,'PBB Level 2')],
           'Objek PBB yang memerlukan verifikasi')
-    r.start('DAFTAR REKOMENDASI INFERENCE')
+    r.start('Kandidat AI untuk ditinjau')
     r.sub('Kandidat dengan skor AI terbesar')
     r.table(['NIB','NOP','Skor','Keputusan'],
             [(x.get('NIB'),x.get('NOP'),nice(x.get('skor_ai')),x.get('keputusan_ai'))
@@ -573,27 +671,43 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
     for k,v in (model_meta or {}).items():
         if k in ('algorithm','status','precision','model_version','test_data_source'):
             r.text('%s: %s'%(k,v),9)
-    r.footer_recommendations([
-        ('Pertahankan keunikan 1 NIB - 1 NOP','Periksa konflik kandidat sebelum mempromosikan pasangan berbasis AI.'),
-        ('Periksa skor dan pesaing dekat','Kandidat dengan skor tertinggi tetapi margin kecil antar pasangan perlu verifikasi studio.'),
-        ('Evaluasi GOLD independen','Kinerja model dan potensi tambahan Level 1 hanya boleh disimpulkan dari data operator yang diverifikasi.')],
+    actions=[]
+    status=str((model_meta or {}).get('status',stats.get('Status AI','')))
+    if status in ('PREVIEW_ONLY','NO_MODEL'):
+        actions.append(('Gunakan AI sebagai daftar telaah',
+            'Status %s belum memberi dasar untuk menambah Level 1 secara otomatis. Periksa kandidat di studio.'%status))
+    if extras:actions.append(('Audit tambahan Level 1 dari AI',
+        '%s pasangan tambahan perlu diperiksa terhadap keunikan NIB–NOP dan bukti administrasi.'%count_text(len(extras))))
+    if lev2b or lev2p:actions.append(('Verifikasi Level 2 di studio',
+        '%s BPN dan %s PBB masih memerlukan keputusan operator.'%
+        (count_text(len(lev2b)),count_text(len(lev2p)))))
+    if scores:actions.append(('Tinjau kandidat AI yang tersisa',
+        '%s kandidat mempunyai skor; skor bukan bukti kecocokan dan tidak menggantikan pemeriksaan pasangan pesaing.'%count_text(len(scores))))
+    if not actions:actions.append(('Periksa kesiapan model dan input',
+        'Tidak ada kandidat AI atau Level 2 yang dapat ditindaklanjuti pada keluaran ini.'))
+    r.footer_recommendations(actions[:3],
         ['rekap_csv.zip: skor seluruh kandidat, pasangan berbasis aturan, tambahan AI.'])
     return r.close()
 
 
-def report6(folder,decisions,candidates,bpn_rows=None,pbb_rows=None,notes=None):
-    r=Report(folder,6,'Verifikasi studio interaktif')
+def report6(folder,decisions,candidates,bpn_rows=None,pbb_rows=None,notes=None,crs=None):
+    r=Report(folder,6,'Verifikasi studio interaktif',crs)
     yes=sum(d.get('label')=='1' for d in decisions)
     no=sum(d.get('label')=='0' for d in decisions)
     unknown=sum(d.get('label') not in ('1','0') for d in decisions)
+    headline=('%s keputusan tercatat: %s cocok, %s tidak cocok, %s belum pasti.'%
+              (count_text(len(decisions)),count_text(yes),count_text(no),count_text(unknown)))
     r.intro({'Kandidat tersedia':len(candidates),'Keputusan tercatat':len(decisions),
-             'Pasangan cocok (GOLD+)':yes,'Tidak cocok (GOLD-)':no,'Belum pasti':unknown},
+             'Cocok (label 1)':yes,'Tidak cocok (label 0)':no,'Belum pasti':unknown},
             notes or ['Verifikasi menggunakan peta BPN/PBB dan bukti administratif.',
                        'Label 1 dan 0 mensyaratkan identitas operator dan sumber bukti.'],
-            'Hasil Level 2 atau belum pasti bukan label negatif (0).')
+            'Hasil Level 2 atau belum pasti bukan label negatif (0).',headline,
+            'selesaikan kasus belum pasti dengan bukti.' if unknown else
+            'lengkapi jejak bukti dan operator pada label 1/0.' if decisions else
+            'mulai verifikasi kandidat yang tersedia.')
     r.figpage(1,'Status keputusan studio','Ringkasan keputusan operator yang tersimpan sebagai label GOLD atau belum pasti.')
     r.bar(['Cocok (1)','Tidak cocok (0)','Belum pasti'],[('Pasangan',[yes,no,unknown])])
-    r.start('PETA - PASANGAN YANG DIVERIFIKASI')
+    r.start('Pasangan yang diverifikasi')
     if bpn_rows is not None and pbb_rows is not None:
         def safe_indices(field):
             vals=set()
@@ -607,13 +721,22 @@ def report6(folder,decisions,candidates,bpn_rows=None,pbb_rows=None,notes=None):
                (pbb_rows,PBB,lambda row:row['idx'] in pidx,'PBB diverifikasi')],
                'Bidang BPN dan PBB yang sudah memperoleh keputusan')
     else:r.no_data('Layer sumber tidak tersedia saat PDF diekspor.')
-    r.start('TABEL KEPUTUSAN OPERATOR')
+    r.start('Keputusan operator')
     r.table(['NIB','NOP','Label','Sumber bukti'],
             [(row.get('NIB'),row.get('NOP'),row.get('label') or '?',row.get('sumber_verifikasi'))
              for row in decisions],limit=30)
-    r.footer_recommendations([
-        ('Lengkapi bukti pendukung','Sumber verifikasi harus jelas dan dapat ditelusuri.'),
-        ('Prioritaskan pasangan meragukan','Periksa konflik 1:N / N:1 dan kesamaan batas dengan dokumen lapangan.'),
-        ('Masukkan ke Modul 4','Gunakan label 1/0 yang terverifikasi, jangan gunakan belum pasti sebagai negatif.')],
+    actions=[]
+    missing_evidence=sum(1 for d in decisions if d.get('label') in ('1','0') and
+                         (empty(d.get('sumber_verifikasi')) or empty(d.get('operator'))))
+    if missing_evidence:actions.append(('Lengkapi jejak keputusan',
+        '%s label 1/0 belum mencatat sumber bukti atau operator; lengkapi sebelum dipakai sebagai GOLD.'%count_text(missing_evidence)))
+    if unknown:actions.append(('Putuskan kasus belum pasti',
+        '%s pasangan belum memiliki label 1/0. Periksa peta dan dokumen; jangan masukkan sebagai label negatif.'%count_text(unknown)))
+    if yes or no:actions.append(('Siapkan label terverifikasi untuk Modul 4',
+        '%s label 1 dan %s label 0 tercatat. Gunakan hanya keputusan dengan bukti yang dapat ditelusuri.'%
+        (count_text(yes),count_text(no))))
+    if not actions:actions.append(('Mulai verifikasi kandidat',
+        '%s kandidat tersedia dan belum ada keputusan tercatat.'%count_text(len(candidates))))
+    r.footer_recommendations(actions,
         ['CSV keputusan berisi operator, waktu, bukti, dan label.', 'rekap_verifikasi.zip mencakup seluruh keputusan operator.'])
     return r.close()
