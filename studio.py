@@ -248,7 +248,8 @@ class VerificationDock(QDockWidget):
                 pass
             report=report6(folder,vals,self.candidates,b_rows,p_rows,
                            ['Keputusan operator tersimpan dalam CSV dengan bukti verifikasi.',
-                            'Belum pasti dan Level 2 tidak otomatis menjadi label 0.'])
+                            'Belum pasti dan Level 2 tidak otomatis menjadi label 0.'],
+                           crs=self.bpn.currentLayer().crs().authid() if b_rows is not None else None)
             zipcsv=zip_csv(folder,{'verifikasi_studio.csv':vals},'rekap_verifikasi.zip')
             QMessageBox.information(self,'Verifikasi Studio',
                   'Hasil disimpan:\n%s\n%s\n%s'%(csvpath,report,zipcsv))
