@@ -288,16 +288,21 @@ class Report:
     def _bar_horizontal(self,labels,series,suffix):
         label_col=245;x0=self.l+label_col;xright=self.w-self.r-65
         vals=[max(0,float(finite(v) or 0)) for _,x in series for v in x]
-        vmax=max(vals+[1]);row_h=min(36,max(28,int(390/max(1,len(labels)))))
+        vmax=max(vals+[1]);base_row_h=min(36,max(28,int(390/max(1,len(labels)))))
         self.y+=15
         for i,label in enumerate(labels):
-            if self.y+row_h>self.bottom-78:self.start('LANJUTAN GRAFIK')
+            self.font(9)
             marker=self.num==3 and 'Alasan Level 2' in self.heading
+            lines=self.wrapped(str(label),label_col-(28 if marker else 12))
+            row_h=max(base_row_h,18*len(lines)+10)
+            if self.y+row_h>self.bottom-78:self.start('LANJUTAN GRAFIK')
             if marker:self.category_marker(self.l,self.y+10,'Level 2')
-            self.font(9);self.p.setPen(QPen(INK));self.p.drawText(self.l+(18 if marker else 0),self.y+10,str(label)[:34])
+            self.font(9);self.p.setPen(QPen(INK))
+            for k,line in enumerate(lines):
+                self.p.drawText(self.l+(18 if marker else 0),self.y+10+k*18,line)
             for j,(name,vec) in enumerate(series):
-                v=max(0,float(finite(vec[i]) or 0));bh=max(5,int((row_h-8)/max(1,len(series))))
-                yy=self.y+(j-.5)*bh
+                v=max(0,float(finite(vec[i]) or 0));bh=max(5,int((base_row_h-8)/max(1,len(series))))
+                yy=self.y+row_h/2+(j-len(series)/2)*bh
                 ww=int((xright-x0)*v/vmax)
                 color,role=(category_style(label) if len(series)==1 else series_style(name))
                 if self.num==3 and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
