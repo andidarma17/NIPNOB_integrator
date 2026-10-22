@@ -7,7 +7,6 @@ from pathlib import Path
 from .compat import set_pdf_a4
 from qgis.PyQt.QtCore import QPointF, Qt
 from qgis.PyQt.QtGui import QPdfWriter, QPageSize, QPainter, QPen, QColor, QFont, QFontMetrics, QPolygonF
-from .evaluation import threshold_guidance
 from .report_theme import (NAVY, INK, MUTED, GRID as BORDER, TINT as PALE,
                            MODEL_RF, MODEL_XGB, GOOD_BG, GOOD_TEXT,
                            BAD_BG, BAD_TEXT, assessment_style)
@@ -208,13 +207,13 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
         models=evaldata.get('models',{})
         selected=evaldata.get('model_terpilih','N/A')
         has_test=evaldata.get('evaluasi_gold_tersedia',False)
-        c.new('Laporan Evaluasi Training AI','Pemaduan NIB-NOP | Klasifikasi biner cocok/tidak cocok')
+        c.new('Evaluasi model pemaduan','Klasifikasi pasangan NIB–NOP')
         status=evaldata.get('status_operasional','BELUM DAPAT DINILAI')
         status_kind=('unknown' if not has_test or status.startswith('BELUM DAPAT DINILAI')
                      else 'bad' if status.startswith('BELUM LAYAK')
                      else 'good' if status.startswith('LAYAK') else 'attention')
-        c.note('STATUS: '+status,kind=status_kind)
-        c.section('Ringkasan proses')
+        c.note(status,kind=status_kind)
+        c.section('Data yang digunakan')
         rows=[['Model terpilih',selected],['Status data GOLD',str(evaldata.get('jumlah_gold',0))+' pasangan'],
             ['SILVER (hasil aturan)',str(evaldata.get('jumlah_silver',0))],
             ['Data FIT',str(evaldata.get('jumlah_fit',0))],
@@ -223,20 +222,19 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
             ['Ambang skor klasifikasi',str(evaldata.get('ambang_prediksi',.9))],
             ['Target Precision (usulan)',fmt(evaldata.get('target_precision_usulan',.99))]]
         c.table(['Komponen','Hasil'],rows,[270,c.cw-270],row_height=31,size=9)
-        c.section('Cara membaca laporan')
-        c.para('Training mengukur kecocokan model pada data yang dipelajari, bukan akurasi data baru. Validation digunakan untuk pemilihan model; testing GOLD independen digunakan untuk estimasi kinerja di luar training.')
-        c.para('SILVER berasal dari aturan Modul 3 dan tidak cukup sebagai dasar klaim akurasi. Label Level 2 tidak otomatis sama dengan salah (0).')
-        c.note('Nilai R2, MAE dan RMSE tidak digunakan sebagai metrik utama: target model adalah klasifikasi pasangan (1 atau 0), bukan prediksi luas/harga.')
+        if not has_test:
+            c.note('Belum ada GOLD testing independen. Metrik TRAIN hanya menjelaskan data latihan; kinerja pada pasangan baru belum dapat dinilai.',kind='unknown')
+        else:
+            c.para('Metrik TEST berasal dari GOLD independen. Utamakan Precision, false positive, dan batas bawah kepercayaan sebelum menilai kelayakan model.')
+        c.para('SILVER adalah label hasil aturan. Level 2 tidak otomatis menjadi label negatif (0).')
 
-        c.new('Metrik model','TRAIN bersifat diagnostik; VALIDATION dan TEST hanya sah jika berasal dari GOLD independen')
+        c.new('Metrik model','TRAIN menjelaskan data latihan; TEST memerlukan GOLD independen')
         for name, detail in models.items():
             c.section(name + (' (Terpilih)' if name==selected else ''))
             rows=[]
             for split in ('TRAIN','VALIDATION','TEST'):
                 m=detail['split'].get(split)
-                if not m:
-                    rows.append([split,'N/A']+['N/A']*6)
-                else:
+                if m:
                     rows.append([split,str(m['n']),fmt(m['precision']),fmt(m['recall']),
                         fmt(m['f1']),fmt(m['accuracy']),fmt(m.get('auc_roc'),'f3'),fmt(m.get('average_precision'),'f3')])
             widths=[90,65,105,102,89,95,105,c.cw-(90+65+105+102+89+95+105)]
@@ -246,7 +244,7 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
                 c.para('TEST: prediksi positif %d | FP %d | FN %d | Brier %.3f (baseline %.3f) | batas bawah Precision CI95 %s.'%
                     (tests['prediksi_positif'],tests['fp'],tests['fn'],tests['brier'],tests['brier_baseline_prevalensi'],fmt(tests['precision_ci95_bawah'])))
         if not has_test:
-            c.note('TEST GOLD BELUM TERSEDIA. Angka TRAIN tidak boleh dipakai menyatakan model sudah baik untuk pemaduan nyata.',kind='unknown')
+            c.note('TEST GOLD belum tersedia. Kumpulkan keputusan studio dengan bukti dan sisihkan sebagian sebagai data uji independen.',kind='unknown')
 
         judgements=evaldata.get('penilaian_per_metrik',[])
         if judgements:
@@ -286,21 +284,21 @@ def make_training_report(output_dir, evaldata, notes=None, summary=None):
             c.y+=390
             c.para('Feature importance menunjukkan hubungan prediktif, bukan sebab-akibat atau bukti administratif. Jangan gunakan fitur turunan label atau keputusan Modul 3 sebagai prediktor.')
 
-        c.new('Panduan interpretasi metrik','Ambang di bawah adalah target awal yang dapat diubah; bukan ketentuan hukum atau standar universal')
-        for i,r in enumerate(threshold_guidance()):
-            if c.y>c.h-190:c.new('Lanjutan panduan interpretasi')
-            c.section('%d. %s'%(i+1,r['nama']))
-            c.para(r['panduan']+'. '+r['alasan'],size=9,width=105,leading=19)
-        c.note('Keputusan terbaik ditentukan oleh biaya kesalahan pemaduan, distribusi kelas, dukungan sampel, dan konsistensi pada wilayah independen.',True)
-
-        c.new('Rekomendasi Tindak Lanjut','Rekomendasi dinamis berdasarkan evaluasi model terpilih pada data GOLD test')
-        for i,line in enumerate(evaldata.get('rekomendasi',[]),1):
-            c.section('%d. Rekomendasi'%i)
-            c.para(line,width=109)
-        c.section('Pembatasan dan tindakan operator')
-        for t in evaldata.get('catatan',[]):
-            c.para('- '+str(t),size=9,width=109)
-        c.note('Kesimpulan: angka testing tidak otomatis mengesahkan pasangan Level 1. Audit konflik NIB/NOP 1:1 dan bukti administrasi tetap wajib.',True)
+        if has_test:c.new('Tindakan berikutnya')
+        else:c.section('Tindakan berikutnya')
+        recommendations=evaldata.get('rekomendasi',[])
+        for i,line in enumerate(recommendations,1):
+            c.para('%d. %s'%(i,line),size=10,leading=24)
+        if not recommendations:
+            c.note('Tidak ada rekomendasi otomatis. Tinjau hasil pengujian dan catatan di bawah sebelum memakai model.',kind='unknown')
+        if has_test:
+            c.section('Catatan evaluasi')
+            for t in evaldata.get('catatan',[]):
+                if not str(t).startswith('R2 / MAE / RMSE'):
+                    c.para('- '+str(t),size=9,width=109)
+            c.note('Metrik TEST tidak mengesahkan pasangan Level 1. Periksa konflik NIB–NOP 1:1 dan bukti administrasi.',True)
+        else:
+            c.note('Sebelum promosi otomatis, kumpulkan GOLD test independen dan periksa konflik NIB–NOP 1:1.',kind='caution')
     finally:
         c.close()
     return str(path)
