@@ -15,7 +15,7 @@ import textwrap
 from qgis.PyQt.QtCore import QPointF
 from qgis.PyQt.QtGui import (QPdfWriter, QPageSize, QPainter, QPen, QColor,
                               QBrush, QFont, QPolygonF)
-from .logic import number, ident
+from .logic import number, ident, empty
 
 NAVY=QColor('#123b58'); BLUE=QColor('#236d9f'); ORANGE=QColor('#d58b43')
 RED=QColor('#bf5550'); GREEN=QColor('#267c68'); INK=QColor('#243642')
@@ -278,6 +278,8 @@ class Report:
         midx=(x0+x1)/2;midy=(y0+y1)/2
         xx=(left+right)/2;yy=(top+bottom)/2
         def xy(pt):return QPointF(float(xx+(pt.x()-midx)*scale),float(yy-(pt.y()-midy)*scale))
+        self.p.save()
+        self.p.setClipRect(int(left),int(top),int(right-left),int(bottom-top))
         for geom,color in valid:
             geompolys=[]
             try:
@@ -295,6 +297,7 @@ class Report:
                 qpoly=QPolygonF([xy(point) for point in points[::step]])
                 if len(qpoly)>=3:self.p.drawPolygon(qpoly)
         self.p.setBrush(QBrush())
+        self.p.restore()
         self.y=bottom+29
         for j,(_rows,color,_pred,label) in enumerate(datasets):
             lx=self.l+(j%3)*self.cw/3
@@ -327,7 +330,7 @@ def report1(folder, b_info,p_info, stats, tables, min_area,max_area):
     for tag,rows in [('BPN',b),('PBB',p)]:
         fields=sorted({k for r in rows for k in r['a'] if k not in ('id_kosong','id_duplikat','luas_flag') and not k.startswith('_')})
         for f in fields:
-            count=sum(1 for r in rows if r['a'].get(f) is None or (isinstance(r['a'].get(f),str) and not r['a'].get(f).strip()))
+            count=sum(1 for r in rows if empty(r['a'].get(f)))
             names.append(tag+' - '+f);missing.append(count);pct.append(100*count/max(1,len(rows)))
     rep.figpage(2,'Jumlah kosong per kolom','Nilai kosong dihitung pada setiap kolom sumber; angka nol bukan kosong.')
     rep.bar(names,[('Kosong',missing)],horizontal=True)
@@ -427,12 +430,15 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
                   for p in pairs], 'Overlap BPN (%)','Kesamaan luas (%)')
     b_rows=bpn_all if bpn_all is not None else lev1+lev2b
     p_rows=pbb_all if pbb_all is not None else lev2p
+    level1_pbb_ids={pair['record_pbb'] for pair in pairs if pair.get('status')=='LEVEL_1'}
+    lev1p=[row for row in p_rows if row['idx'] in level1_pbb_ids]
     r.start('PETA 1 - LEVEL BPN')
     r.map([(lev2b,'#d7e1e8',None,'BPN Level 2'),(lev1,'#328b73',None,'BPN Level 1')],
            'Distribusi pasangan otomatis dan bidang studio')
     r.start('PETA 2 - LEVEL PBB')
-    r.map([(p_rows,'#d7e1e8',None,'PBB terpilih & studio')],
-           'Objek PBB yang memerlukan perhatian / pemeriksaan')
+    r.map([(lev2p,'#d7e1e8',None,'PBB Level 2'),
+           (lev1p,'#328b73',None,'PBB Level 1')],
+           'Distribusi pasangan otomatis dan objek PBB untuk verifikasi studio')
     r.start('REKAP PASANGAN DAN KANDIDAT')
     r.sub('Pasangan dengan overlap BPN terbesar')
     r.table(['NIB','NOP','Overlap BPN %','Overlap PBB %'],
