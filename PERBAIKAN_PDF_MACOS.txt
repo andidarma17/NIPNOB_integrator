@@ -1,0 +1,19 @@
+PERBAIKAN KOMPATIBILITAS PDF - 22 Oktober 2026
+
+Lingkungan uji: QGIS-LTR 3.40.5 macOS, Python 3.9.5, Qt 5.15.2, PyQt 5.15.4.
+Error asli direproduksi dari plugin terpasang:
+TypeError: setPageSize(self, QPagedPaintDevice.PageSize): argument 1 has unexpected type 'QPageSize'
+
+Perbaikan: gunakan pageLayout().setPageSize(QPageSize(...)) dan setPageLayout(layout).
+Diterapkan ke reporting_full.py, ai_pdf.py, storage.py melalui helper compat.py.
+Versi metadata tetap 0.9.4; ini patch lokal, bukan rilis resmi pengembang.
+
+Validasi: PDF modul 1, 2, 3, 5, 6 dengan data sintetis, canvas modul 4,
+dan pembuat laporan storage berhasil dibuat memakai runtime QGIS perangkat ini.
+Header PDF dan penutup EOF diperiksa. Belum menguji training AI penuh,
+seluruh workflow interaktif, atau QGIS 4/Qt6. Plugin terpasang tidak diubah.
+
+Pemasangan: QGIS > Plugins > Manage and Install Plugins > Install from ZIP,
+pilih ZIP MACOS_PDF_FIX. Tutup/buka kembali QGIS setelah pemasangan.
+Jalankan kembali modul dengan parameter dan data yang sama untuk menghasilkan PDF.
+ZIP asli dipertahankan untuk pemulihan.

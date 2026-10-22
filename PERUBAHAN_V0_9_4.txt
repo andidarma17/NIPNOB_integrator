@@ -1,0 +1,14 @@
+NIB-NOP INTEGRATOR v0.9.4 - PEMBARUAN LAPORAN PDF LENGKAP
+
+- Enam tools tetap tersedia dan tidak mengubah aturan inti.
+- Tool 3: Penentuan level pemaduan berbasis aturan.
+- Tool 4: Training AI.
+- Modul 1: delapan grafik lengkap dalam satu laporan_modul1.pdf.
+- Modul 2: grafik QA, peta BPN, PBB, geometri invalid, dan zoom gap bila ada.
+- Modul 3: grafik level dan alasan, overlap, scatter kesamaan luas, dua peta dan tabel kandidat.
+- Modul 4: evaluasi AI v0.9.3 lengkap tetap dipertahankan.
+- Modul 5: hasil inference, distribusi skor, peta klasifikasi, daftar calon AI.
+- Modul 6: status keputusan, peta lokasi yang diperiksa, tabel dan tindak lanjut.
+- Semua rekap rinci tetap di ZIP CSV.
+- PDF baru dibuat dari data saat tools dijalankan dan bukan menyalin gambar lama.
+- QGIS 3.28+ / 4.x adalah target kompatibilitas (BETA, perlu pengujian dalam QGIS).

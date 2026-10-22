@@ -1,0 +1,20 @@
+NIB-NOP Integrator v0.9.3 BETA - Evaluasi Training AI Modul 4
+
+PEMBARUAN:
+- Laporan PDF Modul 4 komprehensif: dataset dan status SILVER/GOLD, metrik TRAIN/VALIDATION/TEST untuk Random Forest/XGBoost, confusion matrix kedua model, ROC/PR, kalibrasi, feature importance, panduan ambang, serta rekomendasi kontekstual.
+- Metrik baru: Accuracy, Precision, Recall, F1, Balanced Accuracy, Specificity, ROC-AUC, Average Precision (PR), Brier, batas bawah Wilson CI95 Precision, TP TN FP FN, baseline prevalensi.
+- PDF yang dihasilkan bernama laporan_modul4.pdf dalam folder hasil yang dipilih; CSV tambahan digabung di rekap_csv.zip.
+- Evaluasi lengkap dalam evaluasi_testing_ai.json untuk audit.
+- Ketika GOLD independen belum mencukupi: label BELUM DAPAT DINILAI, bukan nilai sintetis atau klaim kinerja.
+- Model dipilih dari VALIDATION GOLD, bukan TESTING. Status penerimaan otomatis tidak diberikan hanya berdasarkan metrik.
+- Modul 1, 2, 3, 5, dan 6 tidak diubah pada pembaruan ini.
+
+CARA PEMBARUAN:
+1. Tutup semua dialog NIB-NOP di QGIS.
+2. Nonaktifkan plugin lama, lalu install ZIP versi 0.9.3 melalui Plugins > Manage and Install Plugins > Install from ZIP.
+3. Restart QGIS. Jika versi lama tertahan, uninstall versi lama lebih dahulu.
+4. Jalankan Modul 4 kembali; PDF lama tidak diperbarui otomatis tanpa menjalankan training ulang.
+5. Pastikan dependensi ML tersedia dalam lingkungan Python QGIS (numpy, scikit-learn, joblib; xgboost opsional).
+
+CATATAN: Uji sintaks, unit test, dan training/testing di luar QGIS telah dilakukan.
+Rendering PDF langsung dari QGIS 3/4 belum diuji karena runtime QGIS tidak tersedia pada lingkungan pengembangan ini. Verifikasi visual PDF dan instalasi lintas versi diperlukan.

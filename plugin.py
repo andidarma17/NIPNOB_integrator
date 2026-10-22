@@ -1,0 +1,46 @@
+"""QGIS menu/toolbar plugin, six separate tools."""
+from qgis.PyQt.QtWidgets import QMenu
+from qgis.PyQt.QtCore import Qt
+from .compat import QAction
+
+
+class NibNopPlugin:
+    def __init__(self,iface):
+        self.iface=iface;self.actions=[];self.dock=None
+    def initGui(self):
+        self.menu=QMenu('NIB–NOP Integrator',self.iface.mainWindow())
+        names=['1. Pemeriksaan kelengkapan','2. Kualitas spasial dan fix geometry',
+               '3. Penentuan level pemaduan berbasis aturan',
+               '4. Training AI',
+               '5. Inference AI dan Level 1/2',
+               '6. Verifikasi Studio interaktif di peta']
+        for i,label in enumerate(names,1):
+            action=QAction(label,self.iface.mainWindow())
+            action.triggered.connect(lambda checked=False,n=i:self.launch(n))
+            self.menu.addAction(action);self.actions.append(action)
+            self.iface.addPluginToVectorMenu('NIB–NOP Integrator',action)
+        self.iface.mainWindow().menuBar().addMenu(self.menu)
+    def launch(self,module):
+        if module==6:
+            from .studio import VerificationDock
+            if self.dock is None:
+                self.dock=VerificationDock(self.iface,self.iface.mainWindow())
+                try:area=Qt.DockWidgetArea.RightDockWidgetArea
+                except AttributeError:area=Qt.RightDockWidgetArea
+                self.iface.addDockWidget(area,self.dock)
+            self.dock.show();self.dock.raise_()
+        else:
+            from .dialogs import ToolDialog
+            dlg=ToolDialog(self.iface,module,self.iface.mainWindow())
+            dlg.exec()
+    def unload(self):
+        for action in self.actions:
+            self.iface.removePluginVectorMenu('NIB–NOP Integrator',action)
+        self.actions=[]
+        if self.dock is not None:
+            self.dock.close()
+            self.iface.removeDockWidget(self.dock)
+            self.dock.deleteLater();self.dock=None
+        if getattr(self,'menu',None):
+            self.iface.mainWindow().menuBar().removeAction(self.menu.menuAction())
+            self.menu.deleteLater()

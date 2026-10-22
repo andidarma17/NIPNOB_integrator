@@ -1,0 +1,15 @@
+[general]
+name=NIB NOP Integrator
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+version=0.9.4
+experimental=True
+author=Tim Integrasi NIB-NOP
+email=plugin@example.invalid
+description=Enam tools audit dan pemaduan BPN-PBB, training/inference AI, verifikasi studio. Semua field layer dapat dipilih. PDF lengkap seluruh modul berisi grafik/peta, interpretasi dan tindak lanjut.
+about=Modul 1: Kelengkapan; Modul 2: Kualitas spasial; Modul 3: Pemaduan aturan; Modul 4: Training hybrid dengan evaluasi testing GOLD; Modul 5: Inference; Modul 6: Verifikasi studio. Kompatibilitas QGIS 3.28+ dan 4.x dirancang, belum diverifikasi GUI silang versi.
+category=Vector
+hasProcessingProvider=False
+homepage=https://qgis.org
+tracker=https://qgis.org
+repository=https://qgis.org
