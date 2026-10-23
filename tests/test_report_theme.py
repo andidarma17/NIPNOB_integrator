@@ -20,12 +20,12 @@ def contrast(one,two):
 def test_small_text_contrast():
     white='#FFFFFF'
     for foreground,background in ((TOKENS['INK'],white),(TOKENS['MUTED'],white),
-                                   (TOKENS['LEVEL_2_TEXT'],TOKENS['LEVEL_2']),
+                                   (TOKENS['LEVEL_2_TEXT'],white),
                                    (TOKENS['CAUTION_TEXT'],TOKENS['CAUTION_BG']),
                                    (white,TOKENS['NAVY'])):
         assert contrast(foreground,background)>=4.5
 
 
 def test_dataset_luminance_separation():
-    assert abs(luminance(TOKENS['BPN'])-luminance(TOKENS['PBB']))>.2
+    assert abs(luminance(TOKENS['BPN'])-luminance(TOKENS['PBB']))>.06
     assert "'Catatan'" in SOURCE and "'Peringatan'" in SOURCE

@@ -148,53 +148,192 @@ class Report:
     def intro(self,stats,notes,warning=None,headline=None,next_step=None,kpis=None,actions=None):
         self.stats=dict(stats);self.notes=list(notes);self.warning=warning
         self.actions=list(actions or [])
-        if headline:self.text(headline,19,True,NAVY,space=34)
-        if next_step:self.text('Prioritas: '+next_step,10,color=INK,space=22)
-        kpis=list(kpis or [])[:4]
-        if kpis:
-            self.y+=22
-            cell=self.cw/len(kpis)
-            for i,(label,value,context) in enumerate(kpis):
-                x=self.l+i*cell
-                if i:
-                    self.p.setPen(QPen(GRID,1));self.p.drawLine(int(x-11),int(self.y-15),int(x-11),int(self.y+94))
-                self.font(9,True);self.p.setPen(QPen(MUTED))
-                self.p.drawText(int(x),int(self.y),str(label))
-                value_text=count_text(value) if isinstance(value,(int,float)) else str(value)
-                size=29
-                while size>18:
-                    self.font(size,True)
-                    if QFontMetrics(self.p.font()).horizontalAdvance(value_text)<=cell-24:break
-                    size-=1
-                self.font(size,True);self.p.setPen(QPen(NAVY))
-                self.p.drawText(int(x),int(self.y+48),value_text)
-                self.font(9);self.p.setPen(QPen(MUTED))
-                for line_i,line in enumerate(self.wrapped(context,cell-16)[:2]):
-                    self.p.drawText(int(x),int(self.y+75+line_i*17),line)
-            self.y+=122
-        self.sub('Tindakan prioritas')
-        for i,(title,detail) in enumerate(self.actions[:3],1):
-            self.font(10,True);self.p.setPen(QPen(NAVY))
-            self.p.drawText(self.l,self.y,'T%d  %s'%(i,title))
-            self.y+=22
-            self.text(detail,9,color=INK,space=19)
-        if not self.actions:self.text('Tidak ada tindakan yang ditandai oleh indikator modul ini.',10)
+        p=self.p; x=self.l+168; right=self.w-self.r; content=right-x
+        def label(xx,yy,value,size=9,bold=False,color=INK):
+            self.font(size,bold);p.setPen(QPen(color));p.drawText(int(xx),int(yy),str(value))
+        def para(xx,yy,value,width,size=9,color=INK,limit=3):
+            self.font(size);p.setPen(QPen(color))
+            lines=self.wrapped(value,width)[:limit]
+            for i,line in enumerate(lines):p.drawText(int(xx),int(yy+i*19),line)
+            return len(lines)
+        def section(yy,title):
+            p.setPen(QPen(GRID,1));p.drawLine(self.l,int(yy),right,int(yy))
+            label(self.l,yy+28,title,10,True,NAVY)
+        y=max(self.y+5,165)
+        section(y,'Kesimpulan')
+        y+=42
+        headline_lines=para(x,y,headline or 'Hasil pemeriksaan tersedia pada indikator di bawah.',content,14,NAVY,3)
+        y+=max(42,headline_lines*26)
+        if next_step:
+            label(x,y,'◆',11,True,LEVEL_2_TEXT)
+            priority_lines=para(x+19,y,'Prioritas: '+next_step,content-19,9,INK,2)
+            y+=max(30,priority_lines*19)
         if warning:
-            self.y+=9;self.notice(warning,'warning')
-        self.sub('Dasar laporan')
+            section(y+7,'Batasan interpretasi')
+            y+=44
+            warning_lines=para(x,y,'▪ '+warning,content,9,CAUTION_TEXT,3)
+            y+=max(42,warning_lines*19)+13
+        section(y,'Hasil utama')
+        y+=42
+        for i,(name,value,context) in enumerate(list(kpis or [])[:4]):
+            row_top=y+i*49
+            if i%2:p.fillRect(x,row_top-17,content,48,TINT)
+            label(x+8,row_top,str(name),9,color=MUTED)
+            shown=count_text(value) if isinstance(value,(int,float)) else str(value)
+            label(x+245,row_top,shown,12,True,NAVY)
+            para(x+8,row_top+22,str(context),content-16,8,MUTED,1)
+            p.setPen(QPen(GRID,1));p.drawLine(x,row_top+32,right,row_top+32)
+        y+=49*min(4,len(kpis or []))+14
+        section(y,'Tindak lanjut')
+        y+=43
+        for i,(name,detail) in enumerate(self.actions[:3],1):
+            label(x,y,'T%d  %s'%(i,name),10,True,NAVY)
+            lines=para(x,y+22,detail,content,9,INK,2)
+            y+=max(56,26+lines*19)
+        if not self.actions:
+            para(x,y,'Tidak ada tindakan yang ditandai oleh indikator modul ini.',content)
+            y+=36
+        section(y+6,'Parameter dan')
+        label(self.l,y+49,'jejak audit',10,True,NAVY)
+        y+=42
         facts=[]
-        for label,key in [('BPN','layer_bpn'),('PBB','layer_pbb'),('Kolom BPN','fields_bpn'),
-                          ('Kolom PBB','fields_pbb'),('CRS','crs'),('Ambang','thresholds'),
-                          ('Operator','operator'),('Sidik-jari','hash')]:
+        for name,key in [('BPN','layer_bpn'),('PBB','layer_pbb'),('CRS','crs'),
+                         ('Ambang','thresholds'),('Operator','operator'),('sha256 input','hash')]:
             value=self.metadata.get(key)
-            if value:facts.append('%s: %s'%(label,str(value)[:95]))
-        if self.crs and not self.metadata.get('crs'):facts.append('CRS: '+self.crs)
-        for item in facts:self.text(item,9,color=MUTED,space=18)
-        if not facts:self.text('Metadata input tidak disertakan oleh pemanggil laporan.',9,color=MUTED)
-        self.sub('Istilah ringkas')
-        self.text('NIB: identitas bidang BPN. NOP: identitas objek pajak PBB. Level 1: pasangan lolos seluruh aturan. Level 2: perlu verifikasi studio.',9,space=19)
-        if self.num in (5,6):
-            self.text('GOLD: label dengan bukti operator. SILVER: label hasil aturan, bukan bukti independen.',9,space=19)
+            if value:facts.append((name,str(value)))
+        if self.crs and not self.metadata.get('crs'):facts.append(('CRS',self.crs))
+        if not facts:facts=[('Sumber','Metadata input tidak disertakan pemanggil laporan.')]
+        for name,value in facts[:6]:
+            y+=22
+            label(x,y,name,8,color=MUTED)
+            self.font(8)
+            visible=QFontMetrics(p.font()).elidedText(value,ELIDE_RIGHT,content-118)
+            label(x+110,y,visible,8)
+        self.y=y+35
+        return
+    def module3_brief(self, lev1, lev2b, lev2p, pairs, stats, notes, actions,
+                      bpn_all, pbb_all, overlap_threshold, similarity_threshold):
+        """Editorial first page: every count is derived from the current run."""
+        self.stats=dict(stats);self.notes=list(notes);self.actions=list(actions)
+        p=self.p; l=self.l; right=self.w-self.r; x=l+168; content=right-x
+        b_total=len(bpn_all) if bpn_all is not None else len(lev1)+len(lev2b)
+        p_total=len(pbb_all) if pbb_all is not None else len(lev1)+len(lev2p)
+        no_pair=[row for row in lev2b if 'TIDAK_ADA_IRISAN' in str(row['a'].get('kode_l2',''))]
+        studio=max(0,len(lev2b)-len(no_pair))
+        categories=[('Level 1 · lolos otomatis',len(lev1),LEVEL_1),
+                    ('Level 2 · perlu studio',studio,LEVEL_2),
+                    ('Tanpa calon beririsan',len(no_pair),NO_PAIR)]
+        denom=sum(n for _,n,_ in categories)
+        def label(xx, yy, value, size=9, bold=False, color=INK):
+            self.font(size,bold);p.setPen(QPen(color));p.drawText(int(xx),int(yy),str(value))
+        def rule(yy):
+            p.setPen(QPen(GRID,1));p.drawLine(l,int(yy),right,int(yy))
+        def paragraph(xx, yy, value, width, max_lines=2, size=9, color=INK):
+            self.font(size);p.setPen(QPen(color))
+            for i,line in enumerate(self.wrapped(value,width)[:max_lines]):
+                p.drawText(int(xx),int(yy+i*18),line)
+        def section(yy,title):
+            rule(yy);label(l,yy+27,title,10,True,NAVY)
+        def pct(n,total):
+            return ('%.1f %%' % (100*n/total)).replace('.',',') if total else '—'
+        # The comparison uses BPN as its denominator; PBB is reported separately.
+        subtitle=('%s bidang BPN input dibandingkan dengan %s objek PBB' %
+                  (count_text(b_total),count_text(p_total)))
+        if denom!=b_total:subtitle+=' · %s bidang BPN pada keluaran' % count_text(denom)
+        label(l,155,subtitle,9,color=MUTED)
+        section(176,'Kesimpulan')
+        label(x,205,'◆',11,True,LEVEL_2_TEXT)
+        label(x+20,205,'%s bidang BPN perlu verifikasi studio.' % count_text(studio),12,True,INK)
+        label(x,233,'■',11,True,LEVEL_1)
+        label(x+20,233,'%s bidang BPN lolos Level 1 (%s).' %
+              (count_text(len(lev1)),pct(len(lev1),denom)),11,True,INK)
+        p.fillRect(x,247,146,24,QColor('#FFF3D6'))
+        label(x+8,264,'▲ PERLU PERHATIAN',8,True,QColor('#7A4B00'))
+        paragraph(x+157,264,'Tinjau Level 2 di studio sebelum pemaduan.',content-157,1,9)
+        section(284,'Batasan interpretasi')
+        paragraph(x,311,'▪ Hasil otomatis adalah indikasi pemeriksaan, bukan keputusan administratif atau bukti hukum.',content,2,9,QColor('#7A1F1F'))
+        paragraph(x,341,'▪ Level 2 berarti perlu verifikasi; bukan data yang pasti salah.',content,1,9,QColor('#7A1F1F'))
+        section(365,'Hasil pemaduan')
+        bar_y=381; bar_w=content
+        p.fillRect(x,bar_y,bar_w,14,TINT)
+        pos=x
+        for title,n,color in categories:
+            width=bar_w*n/denom if denom else 0
+            if width>0:
+                p.fillRect(int(pos),bar_y,max(1,int(width)),14,color)
+            pos+=width
+        label(x,419,'Kategori',9,True,MUTED)
+        label(right-129,419,'Jumlah',9,True,MUTED)
+        label(right-52,419,'Porsi',9,True,MUTED)
+        for i,(title,n,color) in enumerate(categories):
+            yy=443+i*29
+            label(x,yy,'■' if i==0 else '◆' if i==1 else '○',10,True,
+                  LEVEL_2_TEXT if i==1 else color)
+            label(x+18,yy,title,9)
+            label(right-116,yy,count_text(n),9,True)
+            label(right-53,yy,pct(n,denom),9)
+            p.setPen(QPen(GRID,1));p.drawLine(x,yy+9,right,yy+9)
+        section(533,'Alasan Level 2')
+        reasons=Counter(code.strip() for row in lev2b for code in
+                        str(row['a'].get('kode_l2','')).split(';') if code.strip() and code.strip()!='TIDAK_ADA_IRISAN')
+        translations={'OVERLAP_KURANG':'Irisan di bawah ambang',
+                      'LUAS_BPN_TIDAK_SESUAI':'Luas BPN di luar ambang',
+                      'LUAS_PBB_TIDAK_SESUAI':'Luas PBB di luar ambang',
+                      'LUAS_TERTULIS_TIDAK_SAMA':'Kesamaan luas di bawah ambang',
+                      'MULTI_NOP':'Beberapa calon NOP','MULTI_NIB':'Beberapa calon NIB',
+                      'NIB_KOSONG':'NIB kosong','NOP_KOSONG':'NOP kosong',
+                      'NIB_DUPLIKAT':'NIB duplikat','NOP_DUPLIKAT':'NOP duplikat',
+                      'TANPA_NIB':'Tanpa calon NIB','TANPA_NOP':'Tanpa calon NOP'}
+        label(x,560,'Alasan yang tercatat pada bidang BPN',9,True,NAVY)
+        for i,(code,n) in enumerate(reasons.most_common(4)):
+            yy=586+i*26
+            label(x,yy,translations.get(code,metric_label(code)),9)
+            label(x+content*.57,yy,count_text(n),9,True)
+            p.setPen(QPen(GRID,1));p.drawLine(x,yy+8,x+content*.67,yy+8)
+        if not reasons:paragraph(x,590,'Tidak ada alasan Level 2 yang tercatat.',content,1,9,MUTED)
+        paragraph(x,699,'Satu bidang dapat memiliki beberapa alasan; jumlah alasan tidak dijumlahkan sebagai jumlah bidang.',content,2,8,MUTED)
+        section(721,'Contoh pasangan')
+        samples=[row for row in pairs if row.get('status')=='LEVEL_2']
+        if not samples:samples=list(pairs)
+        samples=sorted(samples,key=lambda row:finite(row.get('overlap_bpn_pct')) if finite(row.get('overlap_bpn_pct')) is not None else 101)[:6]
+        label(x,749,'Kandidat untuk ditelaah · %s dari %s; rincian lengkap di rekap_csv.zip' %
+              (len(samples),count_text(len(pairs))),8,color=MUTED)
+        cols=[x,x+110,x+335,x+415,x+490]
+        for xx,head in zip(cols,['NIB','NOP','Overlap %','Kes. luas %','Alasan']):label(xx,777,head,8,True,MUTED)
+        p.setPen(QPen(MUTED,1));p.drawLine(x,786,right,786)
+        for i,row in enumerate(samples):
+            yy=810+i*32
+            if i%2:p.fillRect(x,yy-19,content,31,TINT)
+            nib=str(row.get('NIB') or '—');nop=str(row.get('NOP') or '—')
+            self.font(8)
+            fm=QFontMetrics(p.font())
+            for xx,value,width in ((cols[0],nib,104),(cols[1],nop,218)):
+                label(xx,yy,fm.elidedText(value,ELIDE_RIGHT,width),8)
+            ov=finite(row.get('overlap_bpn_pct'))
+            sim=finite(row.get('kesamaan_luas_tulis',row.get('kesamaan_pct')))
+            label(cols[2],yy,('%.1f'%ov).replace('.',',') if ov is not None else '—',8,
+                  color=LEVEL_2_TEXT if ov is not None and ov<=overlap_threshold else INK)
+            label(cols[3],yy,('%.1f'%sim).replace('.',',') if sim is not None else '—',8,
+                  color=LEVEL_2_TEXT if sim is not None and sim<=similarity_threshold else INK)
+            codes=[code.strip() for code in str(row.get('alasan') or row.get('kode_l2') or '').split(';') if code.strip()]
+            reason=translations.get(codes[0],metric_label(codes[0])) if codes else 'Periksa gerbang'
+            if len(codes)>1:reason+=' +%d alasan' % (len(codes)-1)
+            label(cols[4],yy,fm.elidedText(reason,ELIDE_RIGHT,right-cols[4]-4),8)
+            p.setPen(QPen(GRID,1));p.drawLine(x,yy+10,right,yy+10)
+        if not samples:paragraph(x,810,'Tidak ada pasangan kandidat yang dapat ditampilkan.',content,1,9,MUTED)
+        section(1024,'Parameter dan')
+        label(l,1068,'jejak audit',10,True,NAVY)
+        facts=[('Layer',str(self.metadata.get('layer_bpn') or 'tidak tercatat')+' · '+str(self.metadata.get('layer_pbb') or 'tidak tercatat')),
+               ('Ambang','overlap > %g %% · kesamaan luas > %g %%' % (overlap_threshold,similarity_threshold)),
+               ('CRS',str(self.metadata.get('crs') or self.crs or 'tidak tercatat')),
+               ('Operator',str(self.metadata.get('operator') or 'tidak tercatat')),
+               ('sha256 input',str(self.metadata.get('hash') or 'tidak tercatat'))]
+        for i,(key,value) in enumerate(facts):
+            yy=1055+i*25
+            label(x,yy,key,9,color=MUTED)
+            self.font(8);shown=QFontMetrics(p.font()).elidedText(value,ELIDE_RIGHT,content-110)
+            label(x+100,yy,shown,8)
+        self.y=1200
     def footer_recommendations(self,items,appendix=None):
         # The three most urgent actions are already on page one. This closing
         # section keeps provenance and the full indicator audit without repeating them.
@@ -729,10 +868,6 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
 
 def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None,crs=None,metadata=None,overlap_threshold=50,similarity_threshold=90):
     r=Report(folder,3,'Penentuan level pemaduan berbasis aturan',crs,metadata)
-    headline=('%s pasangan Level 1; %s BPN dan %s PBB memerlukan verifikasi studio.'%
-              (count_text(len(lev1)),count_text(len(lev2b)),count_text(len(lev2p))))
-    priority=('verifikasi record Level 2 di studio.' if lev2b or lev2p else
-              'tinjau pasangan Level 1 terhadap dokumen sumber.')
     whys=Counter(code.strip() for row in lev2b+lev2p for code in str(row['a'].get('kode_l2','')).split(';') if code.strip())
     actions=[]
     if lev2b or lev2p:
@@ -751,9 +886,8 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
         '%s pasangan lolos aturan otomatis. Cocokkan dengan dokumen sumber sebelum keputusan administratif.'%count_text(len(lev1))))
     if not actions:actions.append(('Periksa input dan ambang',
         'Tidak ada pasangan Level 1 atau record Level 2 pada keluaran ini; pastikan layer dan parameter yang dipilih tepat.'))
-    kpis=[('Level 1',len(lev1),'pasangan aturan'),('BPN Level 2',len(lev2b),'perlu studio'),
-          ('PBB Level 2',len(lev2p),'perlu studio'),('Kandidat',len(pairs),'beririsan')]
-    r.intro(stats,notes,'Level 2 bukan pasangan salah: data dipisah untuk verifikasi studio. Operator harus menggunakan layer terbaru hasil perbaikan.',headline,priority,kpis,actions)
+    r.module3_brief(lev1,lev2b,lev2p,pairs,stats,notes,actions,
+                    bpn_all,pbb_all,overlap_threshold,similarity_threshold)
     if lev1 or lev2b or lev2p:
         r.figpage(1,'Distribusi level pemaduan','Jumlah pasangan Level 1 dan record yang memerlukan verifikasi studio.')
         r.bar(['Level 1','BPN Level 2','PBB Level 2'],[('Record',[len(lev1),len(lev2b),len(lev2p)])])

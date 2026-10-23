@@ -45,20 +45,20 @@ def wrap(painter, text, width):
 def page_head(painter, width, height, left, right, module, page, title,
               subtitle='', source_hash=None, layer_name=None):
     painter.fillRect(0, 0, width, height, QColor('#FFFFFF'))
+    painter.fillRect(0, 0, width, 14, NAVY)
+    painter.fillRect(0, 14, width, 45, TINT)
     painter.setFont(report_font(9, True))
     painter.setPen(QPen(NAVY))
-    painter.drawText(left, 42, 'NIB–NOP  /  Modul %s' % module)
+    painter.drawText(left, 43, 'NIB–NOP INTEGRATOR  ·  MODUL %s' % module)
     stamp = 'v%s' % version()
     if source_hash:
         stamp += '  ·  input %s' % str(source_hash)[:10]
     painter.setPen(QPen(MUTED))
     painter.setFont(report_font(9))
     stamp_width = QFontMetrics(painter.font()).horizontalAdvance(stamp)
-    painter.drawText(int(width-right-stamp_width), 42, stamp)
-    painter.setPen(QPen(GRID, 1))
-    painter.drawLine(left, 54, width-right, 54)
+    painter.drawText(int(width-right-stamp_width), 43, stamp)
 
-    y = 103
+    y = 111
     painter.setFont(report_font(19, True))
     painter.setPen(QPen(NAVY))
     for line in wrap(painter, title, width-left-right):
@@ -75,11 +75,14 @@ def page_head(painter, width, height, left, right, module, page, title,
     painter.drawLine(left, y, width-right, y)
 
     date = datetime.now(timezone(timedelta(hours=7))).strftime('%d-%m-%Y %H:%M WIB')
-    footer = (str(layer_name) + '  ·  ' if layer_name else '') + date
+    footer = 'Laporan otomatis  ·  ' + date
     painter.setFont(report_font(9))
     painter.setPen(QPen(MUTED))
+    painter.setPen(QPen(GRID, 1))
+    painter.drawLine(left, height-64, width-right, height-64)
+    painter.setPen(QPen(MUTED))
     painter.drawText(left, height-42, footer)
-    number = 'Hal. %s' % page
+    number = 'Halaman %s' % page
     number_width = QFontMetrics(painter.font()).horizontalAdvance(number)
     painter.drawText(int(width-right-number_width), height-42, number)
     return y + 25

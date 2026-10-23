@@ -1,5 +1,13 @@
 # Pemeriksaan redesain laporan PDF
 
+## Iterasi acuan report editorial (23 Oktober 2026)
+
+- Halaman pertama Modul 1, 2, 4, 5, dan 6 kini memakai urutan **Kesimpulan → Batasan interpretasi → Hasil utama/evaluasi → Tindak lanjut → Parameter dan jejak audit**. Modul 3 menambah distribusi kategori, frekuensi alasan Level 2, dan enam contoh kandidat, sesuai struktur contoh pengguna.
+- Modul 3 menggunakan bidang BPN keluaran sebagai penyebut kategori. Contoh data memiliki 1.830 bidang input dan 1.831 record keluaran; kedua angka ditulis terpisah pada halaman pertama. Level 2 dengan calon beririsan dipisahkan dari bidang tanpa calon.
+- Palet aktif kembali ke Indigo–Safron: struktur `#1E2250`, BPN `#3A3F9E`, PBB `#A36A00`, Level 1 `#0B7285`, Level 2 `#8F7A9E`. Warna dilengkapi simbol/arsiran dan teks.
+- Render QGIS 3.40.5 berhasil untuk keenam modul (Modul 1–3 pada data tersedia; Modul 4–6 pada fixture sintetis). Halaman pertama seluruh modul diperiksa secara visual. Sebelas uji `unittest` dan dua pemeriksaan kontras palet lulus.
+- Contoh Modul 3 memakai nama layer, CRS, ambang, dan sha256 input sebenarnya. Operator ditulis “tidak tercatat” karena tidak tersedia pada fixture; tidak dibuat-buat.
+
 Acuan: `TODO_REDESIGN.md`. Laporan yang ditinjau adalah hasil render QGIS 3.40.5/macOS dari `NIBNOP_HASIL`, ditambah kasus tanpa record dan ID 18 digit. Perubahan ini adalah implementasi laporan yang dapat dipakai; status di bawah membedakan yang sudah diuji dari yang masih perlu diuji pada lingkungan lain.
 
 ## Sudah diterapkan dan diperiksa

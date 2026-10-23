@@ -9,21 +9,21 @@
 
 ## Redesain aktif: laporan audit editorial
 
-Mode baca: pembaca mendapat putusan indikatif, angka pembanding, tiga tindakan terurut, lalu bukti rinci. Ringkasan selalu satu halaman. Grafik dan peta mengikuti isi data; kategori nol dan halaman visual kosong tidak ditambahkan. Indikator lengkap berada di lampiran, sementara CSV tetap menjadi rujukan record penuh.
+Mode baca: halaman pertama menyajikan kesimpulan, batasan interpretasi, hasil utama, tindak lanjut, dan jejak audit dalam urutan baca tetap. Modul 3 menambah distribusi hasil, alasan Level 2, dan contoh pasangan pada halaman pertama, mengikuti contoh editorial yang diberikan pengguna. Angka selalu berasal dari hasil proses; jumlah input dan jumlah record keluaran diberi nama terpisah bila berbeda. Grafik dan peta berikutnya mengikuti isi data; CSV tetap menjadi rujukan record penuh.
 
 ### Sistem visual
 
 | Peran | Token | Aturan |
 |---|---|---|
-| Struktur/BPN | `#243B76` | Judul, header tabel, data BPN |
-| Keputusan Level 1 | `#096B63` | Pasangan otomatis; jangan dipakai untuk PBB |
-| Peringatan/overlap | `#A42C3A` | Risiko yang perlu ditelaah |
-| PBB/Level 2 | abu-abu berbeda luminans | PBB `#9AA9B2`, Level 2 `#D4D9DD` dengan tepi/teks gelap |
-| Teks dan garis | `#202831`, `#44515C`, `#CED4D9` | Hierarki tipografi dan grid cetak |
+| Struktur | `#1E2250` | Pita atas, judul, header tabel |
+| Dataset | BPN `#3A3F9E`, PBB `#A36A00` | PBB memakai arsiran 135° pada peta |
+| Level | Level 1 `#0B7285`, Level 2 `#8F7A9E` | Level 2 memakai arsiran 45°; teks `#5E4B70` |
+| QA | overlap `#B5173A`, tanpa pasangan `#AEBBC7` | Simbol dan label menyertai warna |
+| Teks dan garis | `#1B1F33`, `#52636F`, `#D5D9E4` | Hierarki tipografi dan grid cetak |
 
-Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header halaman berupa garis dan informasi versi/input; tanpa pita dekoratif. Isi memakai kalimat langsung dalam bahasa Indonesia. Callout hanya **Catatan** dan **Peringatan**. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
+Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header memakai pita indigo tipis, bidang abu pucat, nama modul, versi, dan garis pemisah. Isi memakai kalimat langsung dalam bahasa Indonesia. Status, Level, dan QA tidak dibedakan hanya oleh warna. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP pada tabel bukti penuh. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
 
-Palet D Indigo–Safron di bawah adalah **riwayat desain**, bukan token aktif. Perubahan ke palet tiga hue mengikuti `TODO_REDESIGN.md` dan konteks cetak hitam-putih.
+Palet D Indigo–Safron kembali menjadi token aktif berdasarkan acuan visual terbaru. Bagian 1–8 di bawah tetap merupakan riwayat baseline sebelum redesain.
 
 ---
 
