@@ -593,10 +593,10 @@ class Report:
         Geometry visualisation uses the original planar coordinates, without basemap.
         """
         self.sub(title)
-        valid=[];bbox=[];group_counts=[]
+        valid=[];bbox=[];group_counts=[];group_points=[]
         for rows,col,predicate,label in datasets:
             colour,role,edge=map_style(label,col)
-            count=0
+            count=0;points=True
             for r in rows:
                 g=r.get('geom')
                 if g is None or g.isNull() or g.isEmpty():continue
@@ -604,9 +604,10 @@ class Report:
                 bb=g.boundingBox()
                 if focus is not None and not bb.intersects(focus):continue
                 valid.append((g,colour,role,edge));bbox.append(bb)
+                points=points and _point_parts(g) is not None
                 count+=1
                 if count>=max_features:break
-            group_counts.append(count)
+            group_counts.append(count);group_points.append(points)
         if not valid:self.no_data('Tidak ada geometri untuk batas peta ini.');return
         self.y+=10
         shown=[j for j,count in enumerate(group_counts) if count]
@@ -615,6 +616,18 @@ class Report:
             lx=self.l+(pos%3)*self.cw/3
             if pos and pos%3==0:self.y+=28
             colour,role,edge=map_style(label,col)
+            if group_points[j]:
+                # Same symbol as the map: solid diamond (Level 2) or dot.
+                fill=QColor(colour);fill.setAlpha(230)
+                self.p.setPen(QPen(QColor(edge).darker(130),.9));self.p.setBrush(QBrush(fill))
+                c=QPointF(lx+7,self.y-7)
+                if role=='level2-map':
+                    self.p.drawPolygon(QPolygonF([QPointF(c.x(),c.y()-6),QPointF(c.x()+6,c.y()),
+                                                  QPointF(c.x(),c.y()+6),QPointF(c.x()-6,c.y())]))
+                else:self.p.drawEllipse(c,4.5,4.5)
+                self.font(9);self.p.setPen(QPen(INK))
+                self.p.drawText(int(lx+21),int(self.y-2),str(label)[:26]+' (%d)'%group_counts[j])
+                continue
             legend_pen=QPen(edge,1.5 if role=='gap-map' else 1.2)
             if role=='gap-map':legend_pen.setStyle(DASH_LINE)
             self.p.setPen(legend_pen);self.p.setBrush(fill_for(colour,role))
@@ -1039,7 +1052,7 @@ def _name_strength_pages(r,pairs,number,names_used,point):
               [('Level 1',[sum(1 for p in accepted if p.get('valid_nama')==code) for code,_ in NAME_STATES]),
                ('Semua kandidat',[sum(1 for p in pairs if p.get('valid_nama')==code) for code,_ in NAME_STATES])])
         number+=1
-    if accepted:
+    if names_used and accepted:
         r.figpage(number,'Kekuatan padanan Level 1',
                   ('KUAT: titik di dalam bidang dan nama cocok; SEDANG: nama mirip atau tidak dinilai; '
                    'LEMAH: nama bertentangan.') if point else
@@ -1153,8 +1166,8 @@ def report3_1(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_al
     weak=[p for p in accepted if p.get('kekuatan') in ('SEDANG','LEMAH')]
     if weak:
         actions.append(('Prioritaskan Level 1 berkekuatan SEDANG/LEMAH',
-            '%s pasangan Level 1 hanya didukung posisi titik%s. Cocokkan dengan dokumen sumber.'%
-            (count_text(len(weak)),'' if names_used else '; kolom nama belum dipilih')))
+            '%s pasangan Level 1 hanya didukung posisi titik. Cocokkan dengan dokumen sumber.'%
+            count_text(len(weak))))
     multi=whys.get('MULTI_NOP',0)
     if multi:actions.append(('Telaah beberapa titik dalam satu bidang',
         '%s record memiliki lebih dari satu titik NOP di dalam bidang yang sama; kolom calon_nama membantu memilih calon.'%count_text(multi)))
@@ -1201,7 +1214,7 @@ def report3_1(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_al
                'Titik NOP di atas bidang BPN')
     if pairs:
         r.start('Rekap pasangan dan kandidat')
-        _strength_table(r,pairs,True)
+        if names_used:_strength_table(r,pairs,True)
         studio=[p for p in pairs if p.get('status')=='LEVEL_2']
         if studio:
             r.sub('Calon Level 2 untuk studio')

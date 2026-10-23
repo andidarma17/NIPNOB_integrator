@@ -417,6 +417,7 @@ def determine_levels(b,p,opts):
     prepare_local(b,opts['bpn_id'],opts['bpn_area'],opts['max_dev'],opts.get('bpn_name'))
     prepare_local(p,opts['pbb_id'],opts['pbb_area'],opts['max_dev'],opts.get('pbb_name'))
     pmode=point_mode(p)
+    names_used=bool(opts.get('bpn_name'))
     pairs=make_candidate_rows(b,p,opts['min_irisan'],radius=0.,
                               point_tol=float(opts.get('point_tol',0.) or 0.) if pmode else 0.,
                               name_thresholds=(opts.get('name_match',90.),
@@ -444,7 +445,8 @@ def determine_levels(b,p,opts):
                  name_state=candidate['valid_nama'])
         candidate['status']='LEVEL_1' if not failures else 'LEVEL_2'
         candidate['alasan']=';'.join(failures)
-        candidate['kekuatan']='' if failures else match_strength(candidate['valid_nama'],point_pair)
+        candidate['kekuatan']=('' if failures or not names_used
+                               else match_strength(candidate['valid_nama'],point_pair))
         if not failures:accepted.append(candidate)
     # Ensure exact 1:1 and no duplicate identity values within accepted.
     seen_b=set();seen_p=set();clean=[]
@@ -481,13 +483,18 @@ def determine_levels(b,p,opts):
     level1=[]
     for match in clean:
         rb=refb[match['record_bpn']];rp=refp[match['record_pbb']]
-        level1.append(level1_record(rb,rp,match,'RULE'))
+        level1.append(level1_record(rb,rp,match,'RULE',names_used=names_used))
     return level1,b_level2,p_level2,pairs,clean
 
 
-def level1_record(rb,rp,match,method,score=None):
-    """BPN parcel + PBB attributes (prefix pbb_) for an accepted pair."""
-    if not match.get('kekuatan'):
+def level1_record(rb,rp,match,method,score=None,names_used=True):
+    """BPN parcel + PBB attributes (prefix pbb_) for an accepted pair.
+
+    Without a name column no name is assessed, so ``kekuatan`` stays empty.
+    """
+    if not names_used:
+        match['kekuatan']=''
+    elif not match.get('kekuatan'):
         match['kekuatan']=match_strength(match.get('valid_nama'),match.get('mode_geom')=='TITIK')
     attrs={k:v for k,v in rb['a'].items() if not k.startswith('_')}
     attrs.update({'nop_padanan':match['NOP'],'level':1,'metode_padu':method,

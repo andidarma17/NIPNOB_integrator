@@ -45,16 +45,15 @@ def name_summary(accepted,names_used):
                     'Level 1 nama MIRIP':states.get('MIRIP',0),
                     'Level 1 nama TIDAK COCOK':states.get('TIDAK_COCOK',0),
                     'Level 1 nama tidak dapat dinilai':states.get('TIDAK_DINILAI',0)})
-    strength=Counter(r.get('kekuatan') for r in accepted)
-    out.update({'Kekuatan KUAT':strength.get('KUAT',0),'Kekuatan SEDANG':strength.get('SEDANG',0),
-                'Kekuatan LEMAH':strength.get('LEMAH',0)})
+        strength=Counter(r.get('kekuatan') for r in accepted)
+        out.update({'Kekuatan KUAT':strength.get('KUAT',0),'Kekuatan SEDANG':strength.get('SEDANG',0),
+                    'Kekuatan LEMAH':strength.get('LEMAH',0)})
     return out
 
 
 def name_notes(options,pmode):
     if not options.get('bpn_name'):
-        return [('Validasi nama tidak digunakan; padanan titik berkekuatan SEDANG paling tinggi.'
-                 if pmode else 'Validasi nama tidak digunakan.')]
+        return ['Validasi nama tidak digunakan; kekuatan padanan tidak dinilai.']
     return ['Validasi nama: %s (BPN) vs %s (PBB); COCOK >= %.0f%%, MIRIP >= %.0f%% '
             '(gelar/sapaan dan ejaan lama dinormalisasi).' %
             (options['bpn_name'],options['pbb_name'],options['name_match'],options['name_partial']),
@@ -547,7 +546,8 @@ class ToolDialog(QDialog):
                 # Build output for AI extras; baseline protected.
                 for r in extras:
                     rb=refb[r['record_bpn']];rp=refp[r['record_pbb']]
-                    lvl1.append(level1_record(rb,rp,r,'AI_VERIFIED',r['skor_ai']))
+                    lvl1.append(level1_record(rb,rp,r,'AI_VERIFIED',r['skor_ai'],
+                                              names_used=bool(opts['bpn_name'])))
                 lvl2b=[r for r in lvl2b if r['idx'] not in occupied_b]
                 lvl2p=[r for r in lvl2p if r['idx'] not in occupied_p]
             # One complete score table, with accepted/rejected status for studio.
