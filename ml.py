@@ -26,6 +26,18 @@ def feature_vector(row):
     return vals
 
 
+def geometry_mode(rows):
+    """'TITIK' or 'POLIGON' for a set of candidate rows; mixing is refused.
+
+    Rows from older CSVs without ``mode_geom`` are polygon candidates.
+    """
+    modes={str(r.get('mode_geom') or 'POLIGON').upper() for r in rows}
+    if len(modes)>1:
+        raise ValueError('Data latih mencampur kandidat PBB poligon dan PBB titik. '
+                         'Latih model terpisah untuk masing-masing mode geometri.')
+    return modes.pop() if modes else 'POLIGON'
+
+
 def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
                      historical_candidates=None):
     """CSV rows keyed by pair_id/record ids/NIB+NOP; labels GOLD require evidence."""
@@ -178,6 +190,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
         train=[];val=[];test=[]
         fit=list(silver)+list(gold)
 
+    geom_mode=geometry_mode(list(fit)+list(val)+list(test))
     if len({int(r['label']) for r in fit})<2:
         raise ValueError('Training memerlukan contoh positif dan negatif. Tambahkan GOLD operator atau SILVER yang mencakup dua kelas.')
 
@@ -277,6 +290,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
     (Path(output_dir)/'evaluasi_testing_ai.json').write_text(
         json.dumps(evaluation,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
     metadata={'status':status,'feature_version':'QGIS_PLUGIN_V1','features':FEATURE_NAMES,
+              'mode_geometri_pbb':geom_mode,
               'algorithm':best_name,'n_silver':len(silver),'n_gold':len(gold),
               'n_training':len(fit),'n_validation':len(val),'n_testing':len(test),
               'target_precision':min_precision,
@@ -294,6 +308,13 @@ def predict(candidates, model_file, metadata_file):
     metadata=json.loads(Path(metadata_file).read_text(encoding='utf-8'))
     if metadata.get('features')!=FEATURE_NAMES or metadata.get('feature_version')!='QGIS_PLUGIN_V1':
         raise ValueError('Skema fitur model berbeda dari versi plugin saat ini.')
+    # Polygon and point candidates encode overlap/area features differently.
+    trained=str(metadata.get('mode_geometri_pbb') or 'POLIGON').upper()
+    current=geometry_mode(candidates) if candidates else trained
+    if trained!=current:
+        raise ValueError('Model dilatih untuk PBB %s, tetapi data sekarang PBB %s. '
+                         'Gunakan model yang dilatih pada mode geometri yang sama.' %
+                         (trained.lower(),current.lower()))
     # Python pickle-based joblib is unsafe from untrusted sources.
     model=joblib.load(model_file)
     matrix=np.asarray([feature_vector(r) for r in candidates],dtype=float)

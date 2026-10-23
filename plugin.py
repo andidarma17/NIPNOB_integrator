@@ -1,4 +1,4 @@
-"""QGIS menu/toolbar plugin, six separate tools."""
+"""QGIS menu/toolbar plugin, seven separate tools (3.1 = PBB titik)."""
 from qgis.PyQt.QtWidgets import QMenu
 from qgis.PyQt.QtCore import Qt
 from .compat import QAction
@@ -9,12 +9,14 @@ class NibNopPlugin:
         self.iface=iface;self.actions=[];self.dock=None
     def initGui(self):
         self.menu=QMenu('NIB–NOP Integrator',self.iface.mainWindow())
-        names=['1. Pemeriksaan kelengkapan','2. Kualitas spasial dan fix geometry',
-               '3. Penentuan level pemaduan berbasis aturan',
-               '4. Training AI',
-               '5. Inference AI dan Level 1/2',
-               '6. Verifikasi Studio interaktif di peta']
-        for i,label in enumerate(names,1):
+        # Internal id 31 = Modul 3.1 (PBB titik NOP).
+        names=[(1,'1. Pemeriksaan kelengkapan'),(2,'2. Kualitas spasial dan fix geometry'),
+               (3,'3. Penentuan level pemaduan berbasis aturan (PBB poligon)'),
+               (31,'3.1 Penentuan level pemaduan PBB titik (NOP)'),
+               (4,'4. Training AI'),
+               (5,'5. Inference AI dan Level 1/2'),
+               (6,'6. Verifikasi Studio interaktif di peta')]
+        for i,label in names:
             action=QAction(label,self.iface.mainWindow())
             action.triggered.connect(lambda checked=False,n=i:self.launch(n))
             self.menu.addAction(action);self.actions.append(action)

@@ -89,4 +89,19 @@ class DropdownTests(unittest.TestCase):
         widget.setField('Nomor_Urut')
         self.assertEqual(widget.currentField(),'Nomor_Urut')
 
+    def test_optional_name_field(self):
+        layer=StubLayer([('NIB','String'),('NAMA','String'),('LUAS','Double')])
+        widget=fieldwidgets.LayerFieldComboBox('bpn','name',optional=True)
+        widget.setLayer(layer)
+        self.assertEqual(widget.values[0],fieldwidgets.NONE_LABEL)
+        self.assertEqual(widget.currentField(),'NAMA')
+        widget.setCurrentIndex(0)                 # operator switches it off
+        self.assertEqual(widget.currentField(),'')
+        widget.setLayer(layer)                    # refresh keeps it off
+        self.assertEqual(widget.currentField(),'')
+        other=StubLayer([('D_NOP','String'),('alamat','String')])
+        pbb=fieldwidgets.LayerFieldComboBox('pbb','name',optional=True)
+        pbb.setLayer(other)
+        self.assertEqual(pbb.currentField(),'')   # no familiar name field
+
 if __name__=='__main__': unittest.main()

@@ -1,4 +1,4 @@
-# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.4)
+# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.5)
 
 **Status:** implemented, compiled and unit-tested without QGIS; GUI, I/O and geometry processing require end-to-end validation within installed QGIS. **Do not yet use unattended on production land-tax records.**
 
@@ -15,7 +15,7 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 3. Jika QGIS memberi peringatan *experimental*, aktifkan plugin percobaan dengan kesadaran status beta.
 4. Menu atas atau **Vector → NIB–NOP Integrator** menyediakan enam tools.
 5. Buka layer BPN/PBB terlebih dahulu, lalu pilih nama layer dan masing-masing field identitas serta luas melalui dropdown **yang menampilkan semua kolom tanpa filter tipe data**. Default NIB, D_NOP, LUAS, D_LUAS akan dipilih jika ditemukan. Jika nama kolom berbeda, pilih sendiri. Kolom luas bertipe teks boleh dipilih jika nilainya berupa angka; nilai yang tidak dapat dibaca sebagai angka akan ditandai kosong/tidak numerik.
-6. Layer harus poligon dan **CRS proyeksi bermeter**. Bila CRS berbeda, centang transformasi sementara PBB ke CRS BPN.
+6. Layer BPN harus poligon; layer PBB boleh **poligon atau titik NOP** (lihat "Pembaruan v0.9.5"). Semua layer memakai **CRS proyeksi bermeter**. Bila CRS berbeda, centang transformasi sementara PBB ke CRS BPN.
 
 **AI dependencies:** instal ke Python yang dipakai *QGIS*, bukan sekadar Python/Colab lain. Pada Windows OSGeo4W shell, gunakan interpreter QGIS yang tersedia dan perintah `python -m pip install scikit-learn joblib xgboost` bila kebijakan instalasi mengizinkan. Penting: pada beberapa instalasi OSGeo4W, instalasi paket lewat pip dapat mengganggu paket yang dikelola OSGeo4W; gunakan lingkungan terkelola/OSGeo4W terlebih dahulu. QGIS harus di-restart setelah pemasangan.
 
@@ -32,6 +32,38 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 
 **Memperbarui instalasi:** Nonaktifkan plugin lama di QGIS, gunakan **Plugins > Manage and Install Plugins > Install from ZIP** dengan paket v0.9.4, lalu restart QGIS. Jika QGIS tidak mengganti file versi lama, hapus instalasi plugin lama lewat manajer plugin sebelum memasang ulang. Jangan hapus atau timpa folder data hasil kerja operator.
 
+## Pembaruan v0.9.5 - Modul 3.1 (PBB titik NOP) dan validasi nama
+
+Dalam praktik, data NOP sering hanya tersedia sebagai **titik**. Pemaduan berbasis aturan kini dipisah:
+
+* **Modul 3** — tetap seperti semula untuk **PBB poligon** (aturan overlap/luas tidak berubah), ditambah validasi nama opsional. Bila layer PBB berupa titik, Modul 3 menolak dan mengarahkan ke Modul 3.1.
+* **Modul 3.1** — khusus **PBB titik NOP** (Point/MultiPoint), dengan aturan di bawah. Keluaran di `~/NIBNOP_HASIL/modul_3_1`: layer `01/02/03`, `laporan_modul3_1.pdf`, `rekap_csv.zip`, `manifest_modul3_1.json`.
+
+Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligon. Modul 5 memakai baseline Modul 3 untuk PBB poligon dan Modul 3.1 untuk PBB titik.
+
+**Aturan Modul 3.1 (PBB titik):**
+
+* Gerbang overlap diganti: calon memenuhi syarat spasial bila **titik NOP berada di dalam bidang BPN**. Titik di luar bidang sampai *Toleransi titik* (bawaan 5 m) tetap dicatat sebagai calon, tetapi menjadi Level 2 dengan alasan `TITIK_DI_LUAR_BIDANG`.
+* Gerbang lain tetap: identitas kosong/duplikat, keunikan 1:1 (dua titik dalam satu bidang → `MULTI_NOP`; titik di dua bidang yang bertumpuk → `MULTI_NIB`), kesamaan luas tertulis BPN–PBB > 90 %, dan deviasi luas. Karena titik tidak punya luas, deviasi luas PBB dihitung **luas tertulis PBB terhadap luas geometri BPN** yang memuat titik.
+* Bidang BPN tanpa titik → `TIDAK_ADA_TITIK`; titik di luar semua bidang → `TITIK_DI_LUAR_SEMUA_BIDANG`.
+* Modul 2: "overlap" PBB titik berarti **titik berimpit** (jarak ≤ 0,01 m); perbaikan geometri dan selisih luas geometri tidak berlaku untuk titik.
+
+**Validasi nama (opsional, Modul 3, 3.1, 5, 6)** — pilih kolom nama pemegang hak (BPN, mis. `NAMA`) dan nama wajib pajak (PBB, mis. `NM_WP`), atau biarkan `(tidak digunakan)`:
+
+* Setelah kandidat NIB–NOP terbentuk, nama keduanya dibandingkan (`skor_nama` 0–100) setelah normalisasi gelar/sapaan (H., Hj., Drs., S.H., Alm., Ny., …), ejaan lama (OE→U, DJ→J, TJ→C), varian Muhammad, dan urutan kata. Status `valid_nama`: **COCOK** (≥ 90 %), **MIRIP** (≥ 60 %), **TIDAK_COCOK**, atau **TIDAK_DINILAI** (nama kosong / kolom tidak dipilih).
+* Setiap pasangan Level 1 diberi **`kekuatan`**:
+
+  | PBB | Nama COCOK | Nama MIRIP / tidak dinilai | Nama TIDAK COCOK |
+  |---|---|---|---|
+  | Titik | KUAT | SEDANG | LEMAH |
+  | Poligon | KUAT | KUAT | SEDANG |
+
+* Secara bawaan nama **hanya menambah kekuatan**, tidak menggugurkan Level 1 (nama dapat berbeda sah karena jual beli, waris, alias). Centang *"Nama TIDAK COCOK menurunkan pasangan ke Level 2"* untuk menjadikannya gerbang (`NAMA_TIDAK_COCOK`).
+* Layer Level 2 mendapat kolom `calon_nama`: calon pasangan yang namanya COCOK, sebagai petunjuk verifikasi studio.
+* Modul 6 menampilkan posisi titik (di dalam / di luar + jarak) dan status nama di tabel kandidat.
+
+**AI (Modul 4–5)**: kandidat titik memakai 18 fitur yang sama dengan pengisian khusus titik (lihat `nibnop_docs/DOMAIN_RULES.md`). Model mencatat `mode_geometri_pbb`; model poligon tidak dapat dipakai untuk data titik dan sebaliknya, dan data latih tidak boleh mencampur keduanya. Nama tidak dipakai sebagai fitur model.
+
 ## Pembaruan v0.9.4 - Laporan PDF lengkap untuk enam tools
 
 - **Modul 1:** delapan grafik lengkap dalam PDF: perbandingan temuan, jumlah atribut kosong, persen atribut kosong, histogram luas BPN/PBB, scatter luas BPN/PBB, dan kategori masalah luas. Setiap grafik diberi judul/keterangan, diproses ulang pada layer dan nama field yang operator pilih.
@@ -46,13 +78,14 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 
 **Penting:** Peta PDF adalah visualisasi indikatif berdasarkan koordinat layer sumber; bukan peta pendaftaran tanah berskala resmi. Untuk pemeriksaan batas, operator tetap harus membuka layer hasil di kanvas QGIS. Fitur output yang tidak tersedia (misalnya gap tidak ditemukan atau skor AI belum ada) diberi penjelasan, bukan dibuat-buat. Laporkan bug tampilan ke pengembang dengan screenshot serta pesan pada QGIS Python console. Kompatibilitas Qt5/Qt6 telah diupayakan tetapi belum teruji langsung dalam instalasi QGIS karena runtime QGIS tidak tersedia di lingkungan pengembangan.
 
-## Enam tools
+## Tujuh tools (Modul 3.1 = PBB titik)
 
 | Tool | Input utama | Output |
 |---|---|---|
 | 1. Kelengkapan | Dua layer awal, dropdown NIB/NOP dan luas, batas luas | Dua layer QA, PDF + ZIP CSV |
 | 2. Spasial | Dua layer awal, overlap area minimum, gap minimum | Dua layer QA geometri, PDF + ZIP CSV |
 | 3. Pemaduan aturan | **Dua layer hasil koreksi manual operator** (bukan otomatis dari Modul 2); parameter 50/90/50 bisa diubah | Padanan L1, BPN L2, PBB L2, CSV pasangan + sidik jari input, PDF |
+| 3.1 Pemaduan PBB titik | Layer BPN poligon + layer PBB **titik NOP** hasil koreksi; kolom nama opsional; toleransi titik 5 m | Padanan L1 (+ `valid_nama`, `kekuatan`), BPN L2, PBB L2 (titik), CSV pasangan, PDF |
 | 4. Training hybrid | Layer operator + CSV kandidat Modul 3 (silver) opsional; CSV fitur GOLD dan/atau layer historis + CSV verifikasi opsional | Model joblib, metadata JSON, rekap CSV+PDF |
 | 5. Inference | Layer operator dan model/metadata Modul 4 | Tiga GeoJSON/GPKG/SHP Level 1 dan 2, CSV skor + PDF |
 | 6. Verifikasi studio | Dua layer aktif + CSV pasangan kandidat opsional | Label manual per-pasangan, CSV langsung, ZIP+PDF rekap |

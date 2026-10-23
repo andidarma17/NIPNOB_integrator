@@ -11,7 +11,15 @@ PREFERRED_FIELDS = {
     ('pbb', 'identity'): ('D_NOP', 'NOP', 'NO_NOP'),
     ('bpn', 'area'): ('LUAS', 'LUAS_TANAH', 'LUASTANAH', 'LUAS_TERDAFTAR', 'LAND_AREA', 'AREA'),
     ('pbb', 'area'): ('D_LUAS', 'LUAS_TANAH', 'LUAS', 'LUASTANAH', 'LAND_AREA', 'AREA'),
+    # Optional name fields: pemegang hak (BPN) vs wajib pajak (PBB).
+    ('bpn', 'name'): ('NAMA', 'NAMA_PEMILIK', 'NM_PEMILIK', 'PEMILIK', 'NAMA_PEMEGANG',
+                      'PEMEGANG_HAK', 'NAMA_HAK', 'NM_PEMEGANG'),
+    ('pbb', 'name'): ('NM_WP', 'D_NM_WP', 'NAMA_WP', 'NM_WP_SPPT', 'NAMA_WAJIB_PAJAK',
+                      'WAJIB_PAJAK', 'NAMA'),
 }
+
+# First item of an optional dropdown; currentField() returns '' for it.
+NONE_LABEL = '(tidak digunakan)'
 
 
 def select_default_field(names, theme='bpn', role='area', previous=''):
@@ -36,10 +44,11 @@ class LayerFieldComboBox(QComboBox):
     module decides whether chosen *values* are numerically meaningful.
     """
 
-    def __init__(self, theme='bpn', role='area', parent=None):
+    def __init__(self, theme='bpn', role='area', parent=None, optional=False):
         super().__init__(parent)
         self.theme = theme
         self.role = role
+        self.optional = optional
         self._layer = None
         self.setMinimumWidth(180)
         self.setToolTip('Semua kolom atribut layer tersedia. Pilih kolom yang sesuai.')
@@ -72,6 +81,9 @@ class LayerFieldComboBox(QComboBox):
 
     def refresh_fields(self, *args, preserve_selection=True):
         previous = self.currentField() if preserve_selection else ''
+        # An optional field the operator explicitly switched off stays off.
+        keep_none = (preserve_selection and self.optional and
+                     self.currentIndex() == 0 and self.currentText() == NONE_LABEL)
         layer = self._layer
         names = []
         if layer is not None and hasattr(layer, 'isValid') and layer.isValid():
@@ -79,15 +91,23 @@ class LayerFieldComboBox(QComboBox):
         self.blockSignals(True)
         try:
             self.clear()
-            self.addItems(names)
-            wanted = select_default_field(names, self.theme, self.role, previous)
-            self.setCurrentIndex(self.findText(wanted) if wanted else -1)
+            self.addItems(([NONE_LABEL] if self.optional else []) + names)
+            wanted = '' if keep_none else select_default_field(
+                names, self.theme, self.role, previous)
+            if wanted:
+                self.setCurrentIndex(self.findText(wanted))
+            else:
+                self.setCurrentIndex(0 if self.optional else -1)
             self.setEnabled(bool(names))
         finally:
             self.blockSignals(False)
 
     def currentField(self):
-        return self.currentText().strip() if self.currentIndex() >= 0 else ''
+        if self.currentIndex() < 0:
+            return ''
+        if self.optional and self.currentIndex() == 0 and self.currentText() == NONE_LABEL:
+            return ''
+        return self.currentText().strip()
 
     def setField(self, name):
         idx = self.findText(name)

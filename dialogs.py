@@ -9,16 +9,62 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea,QWidget,QApplication)
 from .engine import (read,read_pair,fix_geometry,spatial_audit,qa_attribute,columns,
                      layer_from_records,determine_levels,prepare_local,make_candidate_rows,
-                     FEATURE_NAMES,internal_overlap,layer_fingerprint,QA_COLUMNS)
+                     FEATURE_NAMES,internal_overlap,layer_fingerprint,QA_COLUMNS,
+                     point_mode,is_point_layer,output_geom_type,level1_record)
 from .storage import FORMATS,save_layer,zip_csv
-from .reporting_full import report1,report2,report3,report5
+from .reporting_full import report1,report2,report3,report3_1,report5
 from .logic import ident
 from .fieldwidgets import LayerFieldComboBox
 
 
+LEVEL2_EXTRA=[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
+              ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
+              ('persen_selisihL','Double'),('level','Int'),('calon_n','Int'),
+              ('kode_l2','String'),('alasan_l2','String'),('calon_id','String'),
+              ('calon_nama','String')]
+LEVEL1_EXTRA=[('nop_padanan','String'),('level','Int'),('metode_padu','String'),
+              ('overlap_pct','Double'),('kesamaan_pct','Double'),('skor_nama','Double'),
+              ('valid_nama','String'),('kekuatan','String')]
+MODULE_TITLES={1:'01 - Audit Kelengkapan',2:'02 - Kualitas Spasial',
+               3:'03 - Penentuan level pemaduan berbasis aturan (PBB poligon)',
+               31:'03.1 - Penentuan level pemaduan PBB titik (NOP)',
+               4:'04 - Training AI',5:'05 - Inference AI'}
+
+
+def module_label(modul):
+    """Display number: internal id 31 is Modul 3.1."""
+    return '3.1' if modul==31 else str(modul)
+
+
+def name_summary(accepted,names_used):
+    """Counts of name validation and strength for accepted Level 1 pairs."""
+    out={}
+    if names_used:
+        states=Counter(r.get('valid_nama') for r in accepted)
+        out.update({'Level 1 nama COCOK':states.get('COCOK',0),
+                    'Level 1 nama MIRIP':states.get('MIRIP',0),
+                    'Level 1 nama TIDAK COCOK':states.get('TIDAK_COCOK',0),
+                    'Level 1 nama tidak dapat dinilai':states.get('TIDAK_DINILAI',0)})
+    strength=Counter(r.get('kekuatan') for r in accepted)
+    out.update({'Kekuatan KUAT':strength.get('KUAT',0),'Kekuatan SEDANG':strength.get('SEDANG',0),
+                'Kekuatan LEMAH':strength.get('LEMAH',0)})
+    return out
+
+
+def name_notes(options,pmode):
+    if not options.get('bpn_name'):
+        return [('Validasi nama tidak digunakan; padanan titik berkekuatan SEDANG paling tinggi.'
+                 if pmode else 'Validasi nama tidak digunakan.')]
+    return ['Validasi nama: %s (BPN) vs %s (PBB); COCOK >= %.0f%%, MIRIP >= %.0f%% '
+            '(gelar/sapaan dan ejaan lama dinormalisasi).' %
+            (options['bpn_name'],options['pbb_name'],options['name_match'],options['name_partial']),
+            ('Nama TIDAK COCOK menurunkan pasangan ke Level 2.' if options.get('require_name') else
+             'Nama hanya menentukan kekuatan padanan (KUAT/SEDANG/LEMAH), tidak menggugurkan Level 1.')]
+
+
 class Selector(QWidget):
     """Layer + unrestricted attribute-field selectors used in Tools 1 to 5."""
-    def __init__(self,label,with_area=True, optional=False):
+    def __init__(self,label,with_area=True, optional=False, with_name=False):
         super().__init__()
         layout=QFormLayout(self)
         self.label=label
@@ -26,17 +72,27 @@ class Selector(QWidget):
         self.layer=QgsMapLayerComboBox()
         self.id=LayerFieldComboBox(theme, 'identity')
         self.area=LayerFieldComboBox(theme, 'area') if with_area else None
+        self.name=LayerFieldComboBox(theme, 'name', optional=True) if with_name else None
         self.layer.layerChanged.connect(self.change_layer)
         layout.addRow(label,self.layer)
         layout.addRow('Kolom identitas (semua field):',self.id)
         if with_area:
             layout.addRow('Kolom luas tertulis (semua field):',self.area)
+        if with_name:
+            self.name.setToolTip('Opsional. Nama pemegang hak (BPN) / wajib pajak (PBB) '
+                                 'untuk validasi tambahan kekuatan padanan NIB-NOP.')
+            layout.addRow('Kolom nama (opsional, validasi):',self.name)
         self.change_layer(self.layer.currentLayer())
 
     def change_layer(self,layer):
         self.id.setLayer(layer)
         if self.area is not None:
             self.area.setLayer(layer)
+        if self.name is not None:
+            self.name.setLayer(layer)
+
+    def name_field(self):
+        return self.name.currentField() if self.name is not None else ''
 
     def values(self):
         return (self.layer.currentLayer(),self.id.currentField(),
@@ -52,14 +108,16 @@ class ToolDialog(QDialog):
     def __init__(self,iface,modul,parent=None):
         super().__init__(parent)
         self.iface=iface;self.modul=modul
-        names={1:'01 - Audit Kelengkapan',2:'02 - Kualitas Spasial',
-               3:'03 - Penentuan level pemaduan berbasis aturan',4:'04 - Training AI',5:'05 - Inference AI'}
-        self.setWindowTitle('NIB-NOP | '+names[modul]);self.resize(640,750)
+        self.setWindowTitle('NIB-NOP | '+MODULE_TITLES[modul]);self.resize(640,750)
         container=QVBoxLayout(self)
         scroll=QScrollArea();scroll.setWidgetResizable(True)
         form_widget=QWidget();self.panel=QVBoxLayout(form_widget)
         scroll.setWidget(form_widget);container.addWidget(scroll)
-        self.bpn=Selector('Layer BPN:');self.pbb=Selector('Layer PBB:')
+        names=modul in (3,31,5)
+        pbb_label={3:'Layer PBB (poligon):',31:'Layer PBB (titik NOP):'}.get(
+            modul,'Layer PBB (poligon atau titik):')
+        self.bpn=Selector('Layer BPN (poligon):',with_name=names)
+        self.pbb=Selector(pbb_label,with_name=names)
         if modul!=4:
             self.panel.addWidget(self.bpn);self.panel.addWidget(self.pbb)
         else:
@@ -72,7 +130,7 @@ class ToolDialog(QDialog):
         self.param_form=QFormLayout();self.panel.addLayout(self.param_form)
         self.setup_module()
         group=QGroupBox('Folder hasil dan format penyimpanan');outs=QFormLayout(group)
-        self.output=QLineEdit(str(Path.home()/'NIBNOP_HASIL'/('modul_%d'%modul)))
+        self.output=QLineEdit(str(Path.home()/'NIBNOP_HASIL'/('modul_'+module_label(modul).replace('.','_'))))
         browse=QPushButton('Pilih folder...');browse.clicked.connect(self.choose_folder)
         rr=QHBoxLayout();rr.addWidget(self.output);rr.addWidget(browse)
         outs.addRow('Folder:',rr)
@@ -83,7 +141,7 @@ class ToolDialog(QDialog):
         self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumHeight(110)
         container.addWidget(self.log)
         buttons=QHBoxLayout()
-        self.run_button=QPushButton('Jalankan Modul '+str(modul))
+        self.run_button=QPushButton('Jalankan Modul '+module_label(modul))
         self.run_button.clicked.connect(self.run)
         cancel=QPushButton('Tutup');cancel.clicked.connect(self.close)
         buttons.addWidget(self.run_button);buttons.addWidget(cancel);container.addLayout(buttons)
@@ -116,10 +174,26 @@ class ToolDialog(QDialog):
             self.param_form.addRow('',self.use_gap)
         if m in (3,5):
             self.add_spin('overlap','Ambang irisan > (% luas BPN):',50,0,100,1)
+        if m in (3,31,5):
             self.add_spin('sim','Kesamaan luas tertulis > (%):',90,0,100,1)
             self.add_spin('dev','Deviasi luas-geometri maksimum (%):',50,0,500,1)
-            self.add_spin('min_irisan','Minimum luas irisan (m²):',.01,0,500,3)
+            self.add_spin('min_irisan','Minimum luas irisan / overlap internal BPN (m²):',.01,0,500,3)
             self.add_spin('min_gap','Minimum gap tertutup BPN (m²):',1,0,1e8)
+        if m in (31,5):
+            if m==31:
+                info=QLabel('Modul 3.1 untuk PBB yang hanya tersedia sebagai titik NOP. Gerbang overlap '
+                            'diganti "titik NOP berada di dalam bidang BPN"; gerbang identitas, keunikan 1:1 '
+                            'dan luas tetap berlaku. Karena bukti spasial titik lebih lemah, gunakan kolom '
+                            'nama untuk validasi tambahan kekuatan padanan.')
+                info.setWordWrap(True);self.param_form.addRow(info)
+            self.add_spin('point_tol','Toleransi titik PBB di luar bidang (m; hanya calon Level 2)'
+                          +(' - bila PBB titik:' if m==5 else ':'),5,0,1000)
+        if m in (3,31,5):
+            self.add_spin('name_match','Nama COCOK bila kesamaan nama ≥ (%):',90,0,100,1)
+            self.add_spin('name_partial','Nama MIRIP bila kesamaan nama ≥ (%):',60,0,100,1)
+            self.require_name=QCheckBox('Nama TIDAK COCOK menurunkan pasangan ke Level 2 (NAMA_TIDAK_COCOK)')
+            self.require_name.setChecked(False)
+            self.param_form.addRow('',self.require_name)
         if m==4:
             self.silver=self.filepick('CSV kandidat Modul 3 (silver):')
             self.gold_features=self.filepick('CSV fitur historis terverifikasi (opsional):')
@@ -151,9 +225,22 @@ class ToolDialog(QDialog):
         return b,p,bid,pid,ba,pa
     def opts(self):
         b,p,bid,pid,ba,pa=self.two_layers()
+        if self.val('name_partial')>self.val('name_match'):
+            raise ValueError('Ambang nama MIRIP tidak boleh melebihi ambang nama COCOK.')
+        bname=self.bpn.name_field();pname=self.pbb.name_field()
+        if bool(bname)!=bool(pname):
+            raise ValueError('Validasi nama memerlukan kolom nama pada BPN dan PBB, '
+                             'atau pilih "(tidak digunakan)" pada keduanya.')
+        if self.require_name.isChecked() and not bname:
+            raise ValueError('Opsi "Nama TIDAK COCOK menurunkan ke Level 2" memerlukan kolom nama BPN dan PBB.')
         return {'bpn_id':bid,'pbb_id':pid,'bpn_area':ba,'pbb_area':pa,
-                'min_overlap':self.val('overlap'),'min_sim':self.val('sim'),
-                'max_dev':self.val('dev'),'min_irisan':self.val('min_irisan')}
+                'min_overlap':self.val('overlap') if 'overlap' in self.param else 50.,
+                'min_sim':self.val('sim'),
+                'max_dev':self.val('dev'),'min_irisan':self.val('min_irisan'),
+                'bpn_name':bname,'pbb_name':pname,
+                'point_tol':self.val('point_tol') if 'point_tol' in self.param else 0.,
+                'name_match':self.val('name_match'),'name_partial':self.val('name_partial'),
+                'require_name':self.require_name.isChecked()}
     def report_metadata(self,b,p,bid,pid,ba,pa,thresholds=''):
         fp_b=layer_fingerprint(b);fp_p=layer_fingerprint(p)
         return {'layer_bpn':b.name(),'layer_pbb':p.name(),
@@ -175,24 +262,24 @@ class ToolDialog(QDialog):
         try:
             result=self.execute()
             self.log.appendPlainText('SELESAI\n'+ '\n'.join(result))
-            QMessageBox.information(self,'Selesai','Modul %s selesai. Hasil tersimpan pada:\n%s'%(self.modul,self.output.text()))
+            QMessageBox.information(self,'Selesai','Modul %s selesai. Hasil tersimpan pada:\n%s'%(module_label(self.modul),self.output.text()))
         except Exception as e:
             import traceback
             self.log.appendPlainText(traceback.format_exc())
-            QMessageBox.critical(self,'Gagal menjalankan Modul '+str(self.modul),str(e))
+            QMessageBox.critical(self,'Gagal menjalankan Modul '+module_label(self.modul),str(e))
         finally:self.run_button.setEnabled(True)
     def execute(self):
         folder=Path(self.output.text()).expanduser();folder.mkdir(parents=True,exist_ok=True)
         if self.modul==1:return self.run1(folder)
         if self.modul==2:return self.run2(folder)
-        if self.modul==3:return self.run3(folder)
+        if self.modul in (3,31):return self.run3(folder)
         if self.modul==4:return self.run4(folder)
         if self.modul==5:return self.run5(folder)
     def run1(self,out):
         b,p,bid,pid,ba,pa=self.two_layers()
         datasets=[];tables={};stats={};charts=[];files=[]
         for layer,tag,idcol,areacol in [(b,'BPN',bid,ba),(p,'PBB',pid,pa)]:
-            rows=read(layer)
+            rows=read(layer,allow_point=(tag=='PBB'))
             datasets.append((rows,idcol,areacol))
             res,detail=qa_attribute(rows,idcol,areacol,self.val('min_area'),self.val('max_area'))
             stats.update({tag+' '+k:v for k,v in res.items()})
@@ -202,7 +289,9 @@ class ToolDialog(QDialog):
             for k,v in detail.items():tables[tag.lower()+'_'+k]=v
             charts.append((tag+' atribut kosong',{a['nama_kolom']:a['jumlah_kosong'] for a in detail.get('per_kolom_kosong.csv',[])}))
             schema=columns(layer,[('id_kosong','Int'),('id_duplikat','Int'),('luas_flag','String')])
-            files.append(self.persist(layer_from_records(rows,layer.crs(),schema,tag+' M1'),tag.lower()+'_audit_atribut',out))
+            files.append(self.persist(layer_from_records(rows,layer.crs(),schema,tag+' M1',
+                                                         output_geom_type(layer)),
+                                      tag.lower()+'_audit_atribut',out))
         archive=zip_csv(out,tables)
         pdf=report1(out,datasets[0],datasets[1],stats,tables,
                     self.val('min_area'),self.val('max_area'),crs=b.crs().authid(),
@@ -223,7 +312,8 @@ class ToolDialog(QDialog):
             extra=[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
                    ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
                    ('persen_selisihL','Double'),('gap_id','String')]
-            results.append(self.persist(layer_from_records(updated,b.crs(),columns(layer,extra),tag),
+            results.append(self.persist(layer_from_records(updated,b.crs(),columns(layer,extra),tag,
+                                                           output_geom_type(layer)),
                                         tag+'_kualitas_spasial',out))
             tables[tag+'_overlap.csv']=ov
             tables[tag+'_gap_tertutup.csv']=gaps
@@ -234,6 +324,9 @@ class ToolDialog(QDialog):
             stats[tag+'_gap_baru']=sum(int(r['a'].get('bid_tambah',0) or 0) for r in updated)
             logs+=warn
             charts.append((tag+' hasil QA',{key:stats[tag+'_'+key] for key in ['geom_kosong','geom_invalid','geom_fixed','overlap']}))
+        if point_mode(updated_by_tag['pbb']):
+            logs.append('PBB titik: "overlap" PBB berarti titik berimpit (jarak <= 0,01 m); '
+                        'perbaikan geometri dan selisih luas geometri tidak berlaku untuk titik.')
         archive=zip_csv(out,tables)
         pdf=report2(out,updated_by_tag['bpn'],updated_by_tag['pbb'],stats,
                     ['CRS kedua layer diperiksa dan transformasi hanya dilakukan bila diizinkan.',
@@ -254,6 +347,14 @@ class ToolDialog(QDialog):
         logs+=lb+lp
         return b,p,b_rows,p_rows,ob,op,hb,logs
     def run3(self,out):
+        """Modul 3 (PBB poligon) and Modul 3.1 (PBB titik NOP) share one flow."""
+        point=self.modul==31
+        b,p,bid,pid,ba,pa=self.two_layers()
+        if point and not is_point_layer(p):
+            raise ValueError('Modul 3.1 khusus PBB berupa titik NOP. Layer PBB "%s" bukan titik; '
+                             'gunakan Modul 3 untuk PBB poligon.' % p.name())
+        if not point and is_point_layer(p):
+            raise ValueError('Layer PBB "%s" berupa titik. Gunakan Modul 3.1 (PBB titik NOP).' % p.name())
         b,p,br,pr,ob,op,hb,logs=self.prepare3()
         options=self.opts()
         fp_b,fp_p=layer_fingerprint(b),layer_fingerprint(p)
@@ -262,47 +363,65 @@ class ToolDialog(QDialog):
             pair['src_bpn_sha']=fp_b
             pair['src_pbb_sha']=fp_p
         import json
-        (out/'manifest_modul3.json').write_text(json.dumps({'bpn_sha':fp_b,'pbb_sha':fp_p,'input_bpn':b.name(),'input_pbb':p.name()},indent=2),encoding='utf-8')
-        bschema=columns(b,[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
-                  ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
-                  ('persen_selisihL','Double'),('level','Int'),('calon_n','Int'),
-                  ('kode_l2','String'),('alasan_l2','String'),('calon_id','String')])
-        pschema=columns(p,[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
-                  ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
-                  ('persen_selisihL','Double'),('level','Int'),('calon_n','Int'),
-                  ('kode_l2','String'),('alasan_l2','String'),('calon_id','String')])
-        joined=columns(b,[('nop_padanan','String'),('level','Int'),('metode_padu','String'),
-                   ('overlap_pct','Double'),('kesamaan_pct','Double')])
+        tag='modul3_1' if point else 'modul3'
+        (out/('manifest_%s.json'%tag)).write_text(json.dumps({'bpn_sha':fp_b,'pbb_sha':fp_p,'input_bpn':b.name(),
+                                                              'input_pbb':p.name(),
+                                                              'mode_geometri_pbb':'TITIK' if point else 'POLIGON'},
+                                                             indent=2),encoding='utf-8')
+        bschema=columns(b,LEVEL2_EXTRA)
+        pschema=columns(p,LEVEL2_EXTRA)
+        joined=columns(b,LEVEL1_EXTRA)
         joined.extend(('pbb_'+f.name(),f.type()) for f in p.fields() if f.name() not in QA_COLUMNS)
-        exported=[self.persist(layer_from_records(level1,b.crs(),joined,'Level 1'),
+        exported=[self.persist(layer_from_records(level1,b.crs(),joined,'Level 1','MultiPolygon'),
                                '01_padanan_level1',out),
-                  self.persist(layer_from_records(level2b,b.crs(),bschema,'BPN Level 2'),
+                  self.persist(layer_from_records(level2b,b.crs(),bschema,'BPN Level 2','MultiPolygon'),
                                '02_bpn_level2',out),
-                  self.persist(layer_from_records(level2p,b.crs(),pschema,'PBB Level 2'),
+                  self.persist(layer_from_records(level2p,b.crs(),pschema,'PBB Level 2',
+                                                  output_geom_type(p)),
                                '03_pbb_level2',out)]
-        from collections import Counter
-        why=Counter(code for r in level2b for code in r['a'].get('kode_l2','').split(';') if code)
-        summary={'Level 1':len(level1),'BPN Level 2':len(level2b),'PBB Level 2':len(level2p),
-                 'Pasangan beririsan':len(pairs),'Kandidat > overlap':sum(1 for a in pairs if a['overlap_bpn_pct']>options['min_overlap'])}
+        names_used=bool(options['bpn_name'])
+        summary={'Level 1':len(level1),'BPN Level 2':len(level2b),'PBB Level 2':len(level2p)}
+        if point:
+            summary.update({'Kandidat titik-bidang':len(pairs),
+                            'Titik di dalam bidang BPN':sum(1 for a in pairs if a.get('titik_di_dalam')==1)})
+        else:
+            summary.update({'Pasangan beririsan':len(pairs),
+                            'Kandidat > overlap':sum(1 for a in pairs if a['overlap_bpn_pct']>options['min_overlap'])})
+        summary.update(name_summary(accepted,names_used))
         report_tables={'pasangan_kandidat.csv':pairs,'overlap_bpn.csv':ob,
-                       'overlap_pbb.csv':op,'kandidat_gap.csv':hb,
+                       ('titik_berimpit_pbb.csv' if point else 'overlap_pbb.csv'):op,
+                       'kandidat_gap.csv':hb,
                        'alasan_level2.csv':[{'record':row['idx'],
                            'id':row['a'].get(options['bpn_id']),
-                           'alasan':row['a'].get('kode_l2')} for row in level2b]}
+                           'alasan':row['a'].get('kode_l2'),
+                           'calon_nama':row['a'].get('calon_nama')} for row in level2b]}
         archive=zip_csv(out,report_tables)
-        pdf=report3(out,level1,level2b,level2p,pairs,summary,
-                    ['Input wajib dari layer terbaru hasil perbaikan operator.',
-                     'Seluruh pemeriksaan kualitas dihitung ulang pada input baru.',
-                     'Seleksi overlap terhadap luas geometri BPN menggunakan ambang %.1f%%.' % options['min_overlap'],
-                     'Satu NIB/NOP hanya dapat menerima satu padanan yang lolos ambang.',
-                     'Kesamaan luas tertulis harus melewati ambang %.1f%%.' % options['min_sim']],
-                    logs,bpn_all=br,pbb_all=pr,gaps=hb,crs=b.crs().authid(),
-                    metadata=self.report_metadata(b,p,options['bpn_id'],options['pbb_id'],
-                        options['bpn_area'],options['pbb_area'],
-                        'Overlap >%g%%; kesamaan luas >%g%%'%(options['min_overlap'],options['min_sim'])),
-                    overlap_threshold=options['min_overlap'],similarity_threshold=options['min_sim'])
-        reports={'pdf':pdf,'csv_zip':archive}
-        return exported+[reports['pdf'],reports['csv_zip']]
+        common_notes=['Input wajib dari layer terbaru hasil perbaikan operator.',
+                      'Seluruh pemeriksaan kualitas dihitung ulang pada input baru.',
+                      'Satu NIB/NOP hanya dapat menerima satu padanan yang lolos ambang.',
+                      'Kesamaan luas tertulis harus melewati ambang %.1f%%.' % options['min_sim']]
+        if point:
+            notes=common_notes[:2]+[
+                'Syarat spasial: titik NOP berada di dalam bidang BPN; titik di luar bidang '
+                'hingga %.1f m hanya menjadi calon Level 2.' % options['point_tol'],
+                'Deviasi luas PBB = luas tertulis PBB terhadap luas geometri BPN yang memuat titik.']+common_notes[2:]
+            thresholds='Titik di dalam bidang; toleransi %g m; kesamaan luas >%g%%'%(options['point_tol'],options['min_sim'])
+        else:
+            notes=common_notes[:2]+['Seleksi overlap terhadap luas geometri BPN menggunakan ambang %.1f%%.' % options['min_overlap']]+common_notes[2:]
+            thresholds='Overlap >%g%%; kesamaan luas >%g%%'%(options['min_overlap'],options['min_sim'])
+        notes+=name_notes(options,point)
+        metadata=self.report_metadata(b,p,options['bpn_id'],options['pbb_id'],
+                                      options['bpn_area'],options['pbb_area'],thresholds)
+        if point:
+            pdf=report3_1(out,level1,level2b,level2p,pairs,summary,notes,logs,bpn_all=br,pbb_all=pr,
+                          crs=b.crs().authid(),metadata=metadata,point_tol=options['point_tol'],
+                          similarity_threshold=options['min_sim'],names_used=names_used)
+        else:
+            pdf=report3(out,level1,level2b,level2p,pairs,summary,notes,
+                        logs,bpn_all=br,pbb_all=pr,gaps=hb,crs=b.crs().authid(),metadata=metadata,
+                        overlap_threshold=options['min_overlap'],similarity_threshold=options['min_sim'],
+                        names_used=names_used)
+        return exported+[pdf,archive]
     def prepared_ml(self):
         b,p,bid,pid,ba,pa=self.two_layers()
         br,pr,logs=read_pair(b,p,self.reproject.isChecked())
@@ -391,7 +510,8 @@ class ToolDialog(QDialog):
         if self.model.text().strip() or self.meta.text().strip():
             if not self.model.text().strip() or not self.meta.text().strip():
                 raise ValueError('Isi path model dan metadata secara bersamaan.')
-            ai_candidates=make_candidate_rows(br,pr,opts['min_irisan'],self.val('radius'))
+            ai_candidates=make_candidate_rows(br,pr,opts['min_irisan'],self.val('radius'),
+                                              name_thresholds=(opts['name_match'],opts['name_partial']))
             meta=predict(ai_candidates,self.model.text().strip(),self.meta.text().strip())
             occupied_b={r['record_bpn'] for r in baseline};occupied_p={r['record_pbb'] for r in baseline}
             indices_b=Counter(r['a']['_id_field_value'] for r in br)
@@ -415,7 +535,8 @@ class ToolDialog(QDialog):
                                r['deviasi_luas_bpn']<=opts['max_dev'] and r['deviasi_luas_pbb']<=opts['max_dev']),
                     'margin':score-max(competitor_b,competitor_p)>=self.val('margin'),
                     'pesaing':competitor_b<self.val('confidence') and competitor_p<self.val('confidence'),
-                    'tersedia':i not in occupied_b and j not in occupied_p}
+                    'tersedia':i not in occupied_b and j not in occupied_p,
+                    'nama':not (opts['require_name'] and r.get('valid_nama')=='TIDAK_COCOK')}
                 r.update({'gerbang_'+key:'Lolos' if passed else 'Perlu telaah'
                           for key,passed in gates.items()})
                 r['alasan_tidak_promosi']='; '.join(key.replace('_',' ') for key,passed in gates.items() if not passed)
@@ -426,12 +547,7 @@ class ToolDialog(QDialog):
                 # Build output for AI extras; baseline protected.
                 for r in extras:
                     rb=refb[r['record_bpn']];rp=refp[r['record_pbb']]
-                    attrs={k:v for k,v in rb['a'].items() if not k.startswith('_')}
-                    attrs.update({'nop_padanan':r['NOP'],'level':1,'metode_padu':'AI_VERIFIED',
-                                  'overlap_pct':r['overlap_bpn_pct'],
-                                  'kesamaan_pct':r['kesamaan_luas_tulis'],'skor_ai':r['skor_ai']})
-                    attrs.update({'pbb_'+k:v for k,v in rp['a'].items() if not k.startswith('_')})
-                    lvl1.append({'idx':rb['idx'],'fid':rb['fid'],'a':attrs,'geom':rb['geom']})
+                    lvl1.append(level1_record(rb,rp,r,'AI_VERIFIED',r['skor_ai']))
                 lvl2b=[r for r in lvl2b if r['idx'] not in occupied_b]
                 lvl2p=[r for r in lvl2p if r['idx'] not in occupied_p]
             # One complete score table, with accepted/rejected status for studio.
@@ -443,30 +559,30 @@ class ToolDialog(QDialog):
                                  else 'REKOMENDASI_STUDIO')
                 scores.append(c)
         else:scores=[]
-        l1schema=columns(b,[('nop_padanan','String'),('level','Int'),('metode_padu','String'),
-                             ('overlap_pct','Double'),('kesamaan_pct','Double'),('skor_ai','Double')])
+        l1schema=columns(b,LEVEL1_EXTRA+[('skor_ai','Double')])
         l1schema.extend(('pbb_'+f.name(),f.type()) for f in p.fields() if f.name() not in QA_COLUMNS)
-        ll2=[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
-             ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
-             ('persen_selisihL','Double'),('level','Int'),('calon_n','Int'),
-             ('kode_l2','String'),('alasan_l2','String'),('calon_id','String')]
-        paths=[self.persist(layer_from_records(lvl1,b.crs(),l1schema,'Level 1'),
+        paths=[self.persist(layer_from_records(lvl1,b.crs(),l1schema,'Level 1','MultiPolygon'),
                             '01_padanan_level1',out),
-               self.persist(layer_from_records(lvl2b,b.crs(),columns(b,ll2),'BPN Level 2'),
+               self.persist(layer_from_records(lvl2b,b.crs(),columns(b,LEVEL2_EXTRA),'BPN Level 2',
+                                               'MultiPolygon'),
                             '02_bpn_level2',out),
-               self.persist(layer_from_records(lvl2p,b.crs(),columns(p,ll2),'PBB Level 2'),
+               self.persist(layer_from_records(lvl2p,b.crs(),columns(p,LEVEL2_EXTRA),'PBB Level 2',
+                                               output_geom_type(p)),
                             '03_pbb_level2',out)]
-        stat={'Level 1':len(lvl1),'Level 1 baru dari AI':len(extras),
+        pmode=point_mode(pr)
+        stat={'Mode geometri PBB':'Titik (aturan Modul 3.1)' if pmode else 'Poligon (aturan Modul 3)',
+              'Level 1':len(lvl1),'Level 1 baru dari AI':len(extras),
               'BPN Level 2':len(lvl2b),'PBB Level 2':len(lvl2p),
               'Status AI':meta['status'],'Kandidat AI berskor':len(scores)}
+        stat.update(name_summary(list(baseline)+list(extras),bool(opts['bpn_name'])))
         archive=zip_csv(out,{'skor_kandidat.csv':scores,
                              'pasangan_rule.csv':pairs,'tambahan_ai.csv':extras})
         pdf=report5(out,lvl1,lvl2b,lvl2p,pairs,scores,extras,stat,
-                    ['Baseline deterministik Modul 3 dipertahankan.',
+                    ['Baseline deterministik %s dipertahankan.' % ('Modul 3.1 (PBB titik)' if pmode else 'Modul 3'),
                      'AI tanpa evaluasi GOLD independen hanya memberikan rekomendasi studio.',
                      'Ambang skor minimum %.2f, selisih kandidat %.2f.' %
                        (self.val('confidence'),self.val('margin')),
-                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.'],meta,logs,
+                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.']+name_notes(opts,pmode),meta,logs,
                     crs=b.crs().authid(),
                     metadata=self.report_metadata(b,p,opts['bpn_id'],opts['pbb_id'],
                         opts['bpn_area'],opts['pbb_area'],
