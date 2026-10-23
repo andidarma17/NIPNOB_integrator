@@ -237,7 +237,9 @@ def layer_from_records(records, crs, schema, name='Keluaran', geom_type=None):
     """geom_type 'MultiPolygon'/'MultiPoint'; detected from records when None."""
     if geom_type is None:
         geom_type='MultiPoint' if point_mode(records) else 'MultiPolygon'
-    lyr=QgsVectorLayer(geom_type+'?crs='+crs.authid(), name, 'memory')
+    # Set the CRS object directly: authid() is empty for custom CRS (e.g. TM-3 .prj).
+    lyr=QgsVectorLayer(geom_type, name, 'memory')
+    lyr.setCrs(crs)
     if not lyr.isValid():raise RuntimeError('Gagal membuat layer hasil.')
     lyr.dataProvider().addAttributes([QgsField(k,t) for k,t in schema]);lyr.updateFields()
     feats=[]
