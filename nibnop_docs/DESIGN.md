@@ -1,10 +1,29 @@
 # DESIGN.md — Desain Laporan PDF NIB–NOP Integrator
 
-> Dokumen ini mendeskripsikan **desain laporan hasil (PDF) per modul sebagaimana dibangun saat ini (v0.9.4)**,
-> masalah desain yang ditemukan, dan batasan teknis yang harus dihormati saat didesain ulang.
-> Semua nilai (warna, font, ukuran, margin) diambil langsung dari kode (`reporting_full.py`, `ai_pdf.py`, `storage.py`)
-> dan diverifikasi dengan merender laporan secara headless (PyQt5 5.15, data sintetis) — lihat `reference/`.
+> Bagian 1–8 mencatat **baseline v0.9.4 sebelum redesain**, termasuk masalah yang ditemukan.
+> Implementasi saat ini memakai token bersama dalam `report_theme.py` untuk kedua renderer aktif
+> (`reporting_full.py` dan `ai_pdf.py`). Warna dan layout terkini diringkas di bawah.
 > Spesifikasi isi per halaman ada di [`REPORT_SPEC.md`](REPORT_SPEC.md). Konteks produk ada di [`PRODUCT.md`](PRODUCT.md).
+
+---
+
+## Redesain aktif: laporan audit editorial
+
+Mode baca: halaman pertama keenam modul mengikuti tata letak editorial contoh: kesimpulan, batasan interpretasi, hasil terukur, bukti atau contoh record, dan jejak audit. Setiap modul memilih bukti yang sesuai: kolom kosong dan kualitas luas (M1), QA geometri dan overlap terbesar (M2), distribusi Level serta alasan dan contoh pasangan (M3), status GOLD dan hasil TEST (M4), distribusi Level serta kandidat AI (M5), keputusan serta kelengkapan bukti (M6). Modul 1, 2, 4, 5, dan 6 memakai komponen `EditorialPage` bersama; Modul 3 mempertahankan komposisi khusus contoh. Angka selalu berasal dari hasil proses; jumlah input dan jumlah record keluaran diberi nama terpisah bila berbeda. Grafik dan peta berikutnya mengikuti isi data; CSV tetap menjadi rujukan record penuh.
+
+### Sistem visual
+
+| Peran | Token | Aturan |
+|---|---|---|
+| Struktur | `#1E2250` | Pita atas, judul, header tabel |
+| Dataset | BPN `#3A3F9E`, PBB `#A36A00` | PBB memakai arsiran 135° pada peta |
+| Level | Level 1 `#0B7285`, Level 2 `#8F7A9E` | Level 2 memakai arsiran 45°; teks `#5E4B70` |
+| QA | overlap `#B5173A`, gap `#167FA1`, invalid/fixed `#AA5722`, tanpa pasangan `#AEBBC7` | Gap bergaris putus-putus; invalid/fixed berarsir; lokasi kecil diberi lingkaran |
+| Teks dan garis | `#1B1F33`, `#52636F`, `#D5D9E4` | Hierarki tipografi dan grid cetak |
+
+Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header memakai pita indigo tipis, bidang abu pucat, nama modul, versi, dan garis pemisah di antara judul dan subjudul dengan jeda baca. Isi memakai kalimat langsung dalam bahasa Indonesia. Status, Level, dan QA tidak dibedakan hanya oleh warna. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP pada tabel bukti penuh. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
+
+Palet D Indigo–Safron kembali menjadi token aktif berdasarkan acuan visual terbaru. Bagian 1–8 di bawah tetap merupakan riwayat baseline sebelum redesain.
 
 ---
 

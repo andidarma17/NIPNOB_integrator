@@ -7,7 +7,7 @@ from qgis.gui import QgsMapLayerComboBox,QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import (QDockWidget,QWidget,QVBoxLayout,QFormLayout,
     QHBoxLayout,QPushButton,QLineEdit,QLabel,QTableWidget,QTableWidgetItem,
     QHeaderView,QMessageBox,QFileDialog,QComboBox,QAbstractItemView,QCheckBox)
-from .engine import read_pair,prepare_local,make_candidate_rows,fix_geometry
+from .engine import read_pair,prepare_local,make_candidate_rows,fix_geometry,layer_fingerprint
 from .logic import ident
 from .fieldwidgets import LayerFieldComboBox
 from .storage import zip_csv
@@ -248,7 +248,16 @@ class VerificationDock(QDockWidget):
                 pass
             report=report6(folder,vals,self.candidates,b_rows,p_rows,
                            ['Keputusan operator tersimpan dalam CSV dengan bukti verifikasi.',
-                            'Belum pasti dan Level 2 tidak otomatis menjadi label 0.'])
+                            'Belum pasti dan Level 2 tidak otomatis menjadi label 0.'],
+                           crs=self.bpn.currentLayer().crs().authid() if b_rows is not None else None,
+                           metadata={'layer_bpn':self.bpn.currentLayer().name(),
+                                     'layer_pbb':self.pbb.currentLayer().name(),
+                                     'crs':'%s / %s'%(self.bpn.currentLayer().crs().authid(),
+                                                      self.pbb.currentLayer().crs().authid()),
+                                     'operator':self.operator.text().strip(),
+                                     'hash':'BPN %s · PBB %s'%(
+                                         layer_fingerprint(self.bpn.currentLayer())[:12],
+                                         layer_fingerprint(self.pbb.currentLayer())[:12])})
             zipcsv=zip_csv(folder,{'verifikasi_studio.csv':vals},'rekap_verifikasi.zip')
             QMessageBox.information(self,'Verifikasi Studio',
                   'Hasil disimpan:\n%s\n%s\n%s'%(csvpath,report,zipcsv))
