@@ -8,10 +8,35 @@ from qgis.PyQt.QtWidgets import (QDockWidget,QWidget,QVBoxLayout,QFormLayout,
     QHBoxLayout,QPushButton,QLineEdit,QLabel,QTableWidget,QTableWidgetItem,
     QHeaderView,QMessageBox,QFileDialog,QComboBox,QAbstractItemView,QCheckBox)
 from .engine import read_pair,prepare_local,make_candidate_rows,fix_geometry,layer_fingerprint
-from .logic import ident
+from .logic import ident,name_similarity,name_status
 from .fieldwidgets import LayerFieldComboBox
 from .storage import zip_csv
 from .reporting_full import report6
+
+
+def _num(value):
+    try:
+        return float(value)
+    except (TypeError,ValueError):
+        return None
+
+
+def position_text(r):
+    """Overlap % for polygon PBB; inside/outside (+distance) for point PBB."""
+    if r.get('mode_geom')!='TITIK':
+        return r.get('overlap_bpn_pct','')
+    if str(r.get('titik_di_dalam','')).strip() in ('1','1.0','True'):
+        return 'Di dalam bidang'
+    dist=_num(r.get('jarak_geometri'))
+    return 'Di luar (%.1f m)'%dist if dist is not None else 'Di luar bidang'
+
+
+def name_text(r):
+    state=str(r.get('valid_nama') or '')
+    if not state or state=='TIDAK_DINILAI':return ''
+    score=_num(r.get('skor_nama'))
+    label=state.replace('_',' ').title()
+    return '%s (%.0f%%)'%(label,score) if score is not None else label
 
 
 class VerificationDock(QDockWidget):
@@ -31,17 +56,18 @@ class VerificationDock(QDockWidget):
         self.pbb_id=LayerFieldComboBox('pbb', 'identity')
         self.bpn_area=LayerFieldComboBox('bpn', 'area')
         self.pbb_area=LayerFieldComboBox('pbb', 'area')
-        self.bpn.layerChanged.connect(self.bpn_id.setLayer)
-        self.bpn.layerChanged.connect(self.bpn_area.setLayer)
-        self.pbb.layerChanged.connect(self.pbb_id.setLayer)
-        self.pbb.layerChanged.connect(self.pbb_area.setLayer)
-        # Set initial fields explicitly; layerChanged is not fired on first open.
-        self.bpn_id.setLayer(self.bpn.currentLayer());self.bpn_area.setLayer(self.bpn.currentLayer())
-        self.pbb_id.setLayer(self.pbb.currentLayer());self.pbb_area.setLayer(self.pbb.currentLayer())
+        self.bpn_name=LayerFieldComboBox('bpn', 'name', optional=True)
+        self.pbb_name=LayerFieldComboBox('pbb', 'name', optional=True)
+        for combo,widgets in ((self.bpn,(self.bpn_id,self.bpn_area,self.bpn_name)),
+                              (self.pbb,(self.pbb_id,self.pbb_area,self.pbb_name))):
+            for widget in widgets:
+                combo.layerChanged.connect(widget.setLayer)
+                # Set initial fields explicitly; layerChanged is not fired on first open.
+                widget.setLayer(combo.currentLayer())
         form.addRow('BPN:',self.bpn);form.addRow('NIB:',self.bpn_id)
-        form.addRow('Luas BPN:',self.bpn_area)
-        form.addRow('PBB:',self.pbb);form.addRow('NOP:',self.pbb_id)
-        form.addRow('Luas PBB:',self.pbb_area)
+        form.addRow('Luas BPN:',self.bpn_area);form.addRow('Nama BPN (opsional):',self.bpn_name)
+        form.addRow('PBB (poligon/titik):',self.pbb);form.addRow('NOP:',self.pbb_id)
+        form.addRow('Luas PBB:',self.pbb_area);form.addRow('Nama PBB (opsional):',self.pbb_name)
         self.csv_path=QLineEdit();loadcsv=QPushButton('Pilih CSV kandidat...')
         loadcsv.clicked.connect(self.choose_csv)
         row=QHBoxLayout();row.addWidget(self.csv_path);row.addWidget(loadcsv)
@@ -62,8 +88,9 @@ class VerificationDock(QDockWidget):
         self.map_tool=None
         self.info=QLabel('Belum ada kandidat. Pilih kedua layer dan mulai.')
         self.info.setWordWrap(True);layout.addWidget(self.info)
-        self.table=QTableWidget(0,6)
-        self.table.setHorizontalHeaderLabels(['NIB','NOP','Overlap BPN %','Overlap PBB %','Skor AI','Label'])
+        self.table=QTableWidget(0,7)
+        self.table.setHorizontalHeaderLabels(['NIB','NOP','Overlap BPN % / titik','Overlap PBB %',
+                                              'Nama','Skor AI','Label'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self.on_row_selected)
@@ -102,8 +129,11 @@ class VerificationDock(QDockWidget):
             fix_geometry(rows_b);fix_geometry(rows_p)
             self.brecords={r['idx']:r for r in rows_b}
             self.precords={r['idx']:r for r in rows_p}
-            prepare_local(rows_b,self.bpn_id.currentField(),self.bpn_area.currentField(),50)
-            prepare_local(rows_p,self.pbb_id.currentField(),self.pbb_area.currentField(),50)
+            bname=self.bpn_name.currentField();pname=self.pbb_name.currentField()
+            if bool(bname)!=bool(pname):
+                raise ValueError('Validasi nama memerlukan kolom nama BPN dan PBB sekaligus.')
+            prepare_local(rows_b,self.bpn_id.currentField(),self.bpn_area.currentField(),50,bname)
+            prepare_local(rows_p,self.pbb_id.currentField(),self.pbb_area.currentField(),50,pname)
             csv_file=self.csv_path.text().strip()
             if csv_file:
                 with open(csv_file,encoding='utf-8-sig',newline='') as f:
@@ -117,6 +147,10 @@ class VerificationDock(QDockWidget):
                     if i in self.brecords and j in self.precords:
                         r['record_bpn']=i;r['record_pbb']=j
                         r.setdefault('pair_id','B%06d_P%06d'%(i,j))
+                        if bname and not r.get('valid_nama'):
+                            score=name_similarity(self.brecords[i]['a'].get('_name_value'),
+                                                  self.precords[j]['a'].get('_name_value'))
+                            r['skor_nama']=score;r['valid_nama']=name_status(score)
                         self.candidates.append(r)
             else:
                 self.candidates=make_candidate_rows(rows_b,rows_p,.01,float(self.radius.text()))
@@ -165,8 +199,9 @@ class VerificationDock(QDockWidget):
         self.table.blockSignals(True)
         self.table.setRowCount(len(rows))
         for i,r in enumerate(rows):
-            shown=[r.get('NIB',''),r.get('NOP',''),r.get('overlap_bpn_pct',''),
-                   r.get('overlap_pbb_pct',''),r.get('skor_ai',''),
+            shown=[r.get('NIB',''),r.get('NOP',''),position_text(r),
+                   '' if r.get('mode_geom')=='TITIK' else r.get('overlap_pbb_pct',''),
+                   name_text(r),r.get('skor_ai',''),
                    self.decisions.get(r['pair_id'],{}).get('label','')]
             for j,value in enumerate(shown):
                 try:
@@ -202,9 +237,14 @@ class VerificationDock(QDockWidget):
             self.source.setText(prev.get('sumber_verifikasi',''))
             self.notes.setText(prev.get('catatan',''))
             self.operator.setText(prev.get('operator',self.operator.text()))
-            self.lbl.setText('NIB: %s   NOP: %s\nIrisan BPN: %s%%; PBB: %s%%' %
-                             (candidate.get('NIB'),candidate.get('NOP'),
-                              candidate.get('overlap_bpn_pct'),candidate.get('overlap_pbb_pct')))
+            if candidate.get('mode_geom')=='TITIK':
+                where='Titik NOP: '+position_text(candidate)
+            else:
+                where='Irisan BPN: %s%%; PBB: %s%%'%(candidate.get('overlap_bpn_pct'),
+                                                    candidate.get('overlap_pbb_pct'))
+            self.lbl.setText('NIB: %s   NOP: %s\n%s\nNama: %s' %
+                             (candidate.get('NIB'),candidate.get('NOP'),where,
+                              name_text(candidate) or 'tidak dinilai'))
         except Exception as e:
             self.lbl.setText('Tidak dapat menyorot pasangan: '+str(e))
     def mark(self,label):

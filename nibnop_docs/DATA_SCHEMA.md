@@ -7,6 +7,7 @@
 | 1 | `bpn_audit_atribut`, `pbb_audit_atribut` | `laporan_modul1.pdf`, `rekap_csv.zip` |
 | 2 | `bpn_kualitas_spasial`, `pbb_kualitas_spasial` | `laporan_modul2.pdf`, `rekap_csv.zip` |
 | 3 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` | `laporan_modul3.pdf`, `rekap_csv.zip`, `manifest_modul3.json` |
+| 3.1 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` (titik) | `laporan_modul3_1.pdf`, `rekap_csv.zip`, `manifest_modul3_1.json` |
 | 4 | — | `model_terpilih.joblib`, `metadata_model.json`, `evaluasi_testing_ai.json`, `laporan_modul4.pdf`, `rekap_csv.zip` |
 | 5 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` | `laporan_modul5.pdf`, `rekap_csv.zip` |
 | 6 | — | `verifikasi_studio.csv`, `laporan_modul6.pdf`, `rekap_verifikasi.zip` |
@@ -15,13 +16,15 @@ Penamaan: bila file sudah ada, layer baru diberi sufiks `__run2`, `__run3`… (t
 
 ## 2. Kolom QA yang ditambahkan (`engine.QA_COLUMNS`)
 
-`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan`
+`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan, skor_nama, valid_nama, kekuatan, calon_nama`
+
+v0.9.5: Level 1 menambah `skor_nama`, `valid_nama`, `kekuatan` (`overlap_pct` kosong untuk PBB titik); Level 2 menambah `calon_nama`. Layer PBB titik disimpan sebagai MultiPoint.
 (dibuang saat membaca layer agar QA lama tidak terbawa; `persen_selisihL` bertanda ±, terhadap luas **tertulis**).
 
 ## 3. Skema CSV penting
 
 **`pasangan_kandidat.csv` / `skor_kandidat.csv` / `fitur_kandidat.csv`**
-`pair_id` (`B%06d_P%06d`), `record_bpn`, `record_pbb`, `NIB`, `NOP`, `irisan_m2`, `overlap_bpn_pct`, `overlap_pbb_pct`, `iou`, `area_bpn_geom`, `area_pbb_geom`, + 18 fitur (lihat `DOMAIN_RULES.md` §3), `x_bpn`, `y_bpn`; M3 tambah `status` (`LEVEL_1`/`LEVEL_2`), `alasan` (`;`), `src_bpn_sha`, `src_pbb_sha`; M5 tambah `skor_ai`, `keputusan_ai`.
+`pair_id` (`B%06d_P%06d`), `record_bpn`, `record_pbb`, `NIB`, `NOP`, `irisan_m2`, `overlap_bpn_pct`, `overlap_pbb_pct`, `iou`, `area_bpn_geom`, `area_pbb_geom`, + 18 fitur (lihat `DOMAIN_RULES.md` §3), `x_bpn`, `y_bpn`, `mode_geom` (`POLIGON`/`TITIK`), `titik_di_dalam` (1/0; kosong untuk poligon), `skor_nama`, `valid_nama`; M3 tambah `status` (`LEVEL_1`/`LEVEL_2`), `alasan` (`;`), `kekuatan`, `src_bpn_sha`, `src_pbb_sha`; M5 tambah `skor_ai`, `keputusan_ai`.
 
 **Label operator / GOLD (`verifikasi_studio.csv`, `template_verifikasi_operator.csv`)**
 `pair_id, record_bpn, record_pbb, NIB, NOP, label (1|0|kosong), status_verifikasi (DIVERIFIKASI), sumber_verifikasi, operator, catatan, waktu` (+ opsional `wilayah` untuk pengelompokan split, `jenis_data`).
@@ -48,7 +51,7 @@ Metrik per split: `n, positif, negatif, prevalensi, threshold, tp, tn, fp, fn, c
 
 ## 5. `metadata_model.json`
 
-`status, feature_version="QGIS_PLUGIN_V1", features[18], algorithm, n_silver, n_gold, n_training, n_validation, n_testing, target_precision, holdout{…}, threshold, evaluation_file, note`.
+`status, feature_version="QGIS_PLUGIN_V1", features[18], mode_geometri_pbb (POLIGON|TITIK; tidak ada = POLIGON), algorithm, n_silver, n_gold, n_training, n_validation, n_testing, target_precision, holdout{…}, threshold, evaluation_file, note`.
 
 ## 6. Kosakata status & label (untuk desain — harus bisa ditampilkan)
 
@@ -63,5 +66,8 @@ Metrik per split: `n, positif, negatif, prevalensi, threshold, tp, tn, fp, fn, c
 | Flag luas (M1) | `LUAS_KOSONG_ATAU_NONNUMERIK`, `LUAS_NOL_NEGATIF`, `LUAS_KECIL`, `LUAS_BESAR` |
 | Alasan Level 2 (M3) | lihat `DOMAIN_RULES.md` §1 |
 | Kandidat gap | `bid_tambah=1`, `gap_id=GAPnnnnn` |
+| Validasi nama | `COCOK`, `MIRIP`, `TIDAK_COCOK`, `TIDAK_DINILAI` |
+| Kekuatan Level 1 | `KUAT`, `SEDANG`, `LEMAH` |
+| Mode geometri PBB | `POLIGON`, `TITIK` |
 
 Kode mentah (UPPER_SNAKE) saat ini bocor ke PDF; desain ulang perlu **label manusiawi** + pemetaan kode→label.

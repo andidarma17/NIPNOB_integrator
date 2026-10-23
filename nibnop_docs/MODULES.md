@@ -1,6 +1,6 @@
 # MODULES.md — Enam tools: input, parameter, proses, keluaran
 
-Semua tool menerima **layer BPN** dan **layer PBB** (poligon, CRS proyeksi **meter**) dengan dropdown layer + **semua field**: kolom identitas (NIB / NOP) dan kolom luas tertulis. Default otomatis: BPN `NIB`/`LUAS`, PBB `D_NOP`/`D_LUAS` (alternatif: `D_NIB, ID_BIDANG`; `NOP, NO_NOP`; `LUAS_TANAH, LUASTANAH, LUAS_TERDAFTAR, LAND_AREA, AREA`).
+Semua tool menerima **layer BPN** (poligon) dan **layer PBB** (poligon **atau titik NOP**, v0.9.5), CRS proyeksi **meter**, dengan dropdown layer + **semua field**: kolom identitas (NIB / NOP) dan kolom luas tertulis. Default otomatis: BPN `NIB`/`LUAS`, PBB `D_NOP`/`D_LUAS` (alternatif: `D_NIB, ID_BIDANG`; `NOP, NO_NOP`; `LUAS_TANAH, LUASTANAH, LUAS_TERDAFTAR, LAND_AREA, AREA`).
 Opsi umum: *reproyeksikan PBB ke CRS BPN bila CRS berbeda* (jika tidak dicentang dan CRS berbeda → ditolak). CRS geografis (derajat) → ditolak.
 Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan nama kolom 10 karakter). Folder bawaan: `~/NIBNOP_HASIL/modul_N`.
 
@@ -35,6 +35,17 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Proses | Audit spasial ulang → kandidat (irisan > min) → `gate_pair` → Level 1 hanya bila **semua** gerbang lolos dan 1:1; sisanya Level 2 dengan kode alasan |
 | Keluaran | `01_padanan_level1` (BPN + atribut PBB berawalan `pbb_`, `nop_padanan`, `metode_padu=RULE`, `overlap_pct`, `kesamaan_pct`), `02_bpn_level2`, `03_pbb_level2` (`level`, `calon_n`, `kode_l2`, `alasan_l2`, `calon_id`), `manifest_modul3.json`, PDF, ZIP |
 | Catatan | Kesetaraan tepat pada ambang **tidak lolos** (`>` ketat). Hubungan 1:N dihitung dari calon **di atas ambang**, bukan total irisan kecil |
+| Validasi nama (0.9.5) | Kolom nama opsional BPN/PBB → `skor_nama`, `valid_nama`, `kekuatan` (KUAT/SEDANG/LEMAH), `calon_nama`; opsi "Nama TIDAK COCOK → Level 2" (bawaan mati). Ambang nama COCOK 90 %, MIRIP 60 %. PBB berupa titik ditolak → gunakan Modul 3.1 |
+
+## Modul 3.1 — Penentuan level pemaduan PBB titik (NOP) (0.9.5)
+
+| | |
+|---|---|
+| Input | Layer BPN poligon + layer PBB **titik** (Point/MultiPoint) hasil koreksi operator; kolom nama opsional |
+| Parameter | Kesamaan luas tertulis > **90 %**; deviasi luas maks **50 %**; toleransi titik di luar bidang **5 m**; minimum overlap internal BPN 0,01 m²; minimum gap 1 m²; nama COCOK 90 % / MIRIP 60 %; opsi "Nama TIDAK COCOK → Level 2" |
+| Proses | Audit ulang (BPN: fix, overlap, gap; PBB: titik berimpit) → kandidat titik-bidang → gerbang identitas, keunikan 1:1, luas, **titik di dalam bidang** (menggantikan overlap) → validasi nama → kekuatan |
+| Keluaran | `01_padanan_level1` (bidang BPN + atribut PBB, `overlap_pct` kosong), `02_bpn_level2`, `03_pbb_level2` (titik), `manifest_modul3_1.json`, `laporan_modul3_1.pdf`, ZIP (`pasangan_kandidat.csv`, `titik_berimpit_pbb.csv`, …) |
+| Catatan | Deviasi luas PBB = luas tertulis PBB vs luas geometri BPN. Titik di luar bidang hanya calon Level 2 (`TITIK_DI_LUAR_BIDANG`). Bidang tanpa titik `TIDAK_ADA_TITIK`; titik jauh dari semua bidang `TITIK_DI_LUAR_SEMUA_BIDANG`. Padanan titik tanpa nama cocok berkekuatan paling tinggi SEDANG |
 
 ## Modul 4 — Training AI
 
@@ -66,4 +77,4 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Aksi | **Cocok (1)** / **Tidak cocok (0)** / **Belum pasti** + nama operator, sumber bukti, catatan; label 1/0 mewajibkan operator + bukti |
 | Penyimpanan | `verifikasi_studio.csv` ditulis setiap keputusan (UTF-8 BOM) |
 | Ekspor | `laporan_modul6.pdf`, `rekap_verifikasi.zip` |
-| Catatan | Urutan record layer harus sama dengan saat CSV Modul 3/5 dibuat; CSV hasil dipakai Modul 4 sebagai GOLD |
+| Catatan | Urutan record layer harus sama dengan saat CSV Modul 3/3.1/5 dibuat; CSV hasil dipakai Modul 4 sebagai GOLD |

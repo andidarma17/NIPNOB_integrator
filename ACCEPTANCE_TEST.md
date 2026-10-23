@@ -50,3 +50,16 @@ Semua pengecekan dialog interaktif memerlukan QGIS terpasang; pengujian unit oto
 7. Semua modul: `rekap_csv.zip` tetap dihasilkan, tabel rinci tidak disalin seluruhnya ke PDF, tidak ada file PNG wajib di folder hasil; periksa halaman PDF tidak terpotong / teks bertumpuk di QGIS Windows.
 8. Ulangi dengan layer tanpa gap, kolom luas teks, tanpa model AI, 0 kasus overlap, dan 0 keputusan studio: PDF harus tetap dapat dibuat dengan keterangan kosong yang jelas.
 9. Ulangi QGIS 3.44 LTR dan QGIS 4.x secara terpisah; jika ada kegagalan Qt API, catat traceback lengkap, versi Qt/Python/QGIS, dan tool yang digunakan.
+
+
+## Acceptance test Modul 3.1 (PBB titik) dan validasi nama versi 0.9.5
+
+1. Buat layer PBB titik (mis. *Centroids* dari PBB poligon, lalu geser sebagian titik ke luar bidang 1–4 m dan beberapa > 5 m). Modul 1 dan 2 harus berjalan tanpa galat; Modul 2 menyimpan `pbb_kualitas_spasial` sebagai titik.
+2. Modul 3 dengan PBB titik harus menolak dan mengarahkan ke Modul 3.1; Modul 3.1 dengan PBB poligon juga menolak. Modul 3.1 dengan PBB titik tanpa kolom nama: Level 1 hanya untuk titik di dalam bidang dengan satu titik per bidang; `kekuatan = SEDANG`; titik di luar bidang ≤ 5 m beralasan `TITIK_DI_LUAR_BIDANG`, > 5 m `TITIK_DI_LUAR_SEMUA_BIDANG`; bidang tanpa titik `TIDAK_ADA_TITIK`. `03_pbb_level2` bertipe titik.
+3. Ulangi Modul 3.1 dengan kolom nama (mis. `NAMA` dan `NM_WP`): pasangan nama sama → `KUAT`; nama berbeda → `LEMAH` dan tetap Level 1. Centang "Nama TIDAK COCOK menurunkan pasangan ke Level 2": pasangan itu pindah ke Level 2 dengan `NAMA_TIDAK_COCOK`.
+4. Dua titik dalam satu bidang dengan satu nama cocok → keduanya Level 2 `MULTI_NOP`, kolom `calon_nama` berisi NOP bernama cocok.
+5. Pilih kolom nama hanya di salah satu layer → dialog menolak dengan pesan jelas.
+6. Modul 3 (poligon) dengan kolom nama `(tidak digunakan)`: jumlah Level 1/2 identik dengan v0.9.4 untuk input dan parameter sama.
+7. Modul 4 pada data titik lalu Modul 5 pada data poligon dengan model tersebut → ditolak (mode geometri berbeda).
+8. Modul 6 dengan PBB titik: tabel menampilkan "Di dalam bidang" / "Di luar (x m)" dan status nama; memilih baris menyorot bidang BPN dan titik PBB.
+9. Hasil Modul 3.1 tersimpan di `modul_3_1/` dengan `laporan_modul3_1.pdf` dan `manifest_modul3_1.json`; menu QGIS menampilkan entri "3.1" di antara Modul 3 dan 4.

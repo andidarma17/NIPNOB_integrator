@@ -1,4 +1,4 @@
-"""Complete, single-file PDF reports for QGIS NIB-NOP Integrator modules 1, 2, 3, 5, 6.
+"""Complete, single-file PDF reports for QGIS NIB-NOP Integrator modules 1, 2, 3, 3.1, 5, 6.
 
 Uses ONLY QGIS-bundled Qt (QPdfWriter/QPainter) and QGIS record geometries.
 All figures are computed from the actual in-memory result of this execution.
@@ -61,13 +61,51 @@ def human_status(value):
     return labels.get(str(value),str(value).replace('_',' ').capitalize())
 
 
+REASON_LABELS={'TIDAK_ADA_IRISAN':'Tidak ada bidang beririsan',
+               'OVERLAP_KURANG':'Irisan di bawah ambang',
+               'MULTI_NOP':'Satu BPN memiliki beberapa calon PBB',
+               'MULTI_NIB':'Satu PBB memiliki beberapa calon BPN',
+               'NIB_KOSONG':'NIB kosong','NOP_KOSONG':'NOP kosong',
+               'NIB_DUPLIKAT':'NIB duplikat','NOP_DUPLIKAT':'NOP duplikat',
+               'LUAS_BPN_TIDAK_SESUAI':'Luas BPN tidak sesuai',
+               'LUAS_PBB_TIDAK_SESUAI':'Luas PBB tidak sesuai',
+               'LUAS_TERTULIS_TIDAK_SAMA':'Luas tertulis tidak sepadan',
+               'TANPA_NOP':'Tanpa calon NOP','TANPA_NIB':'Tanpa calon NIB',
+               'TITIK_DI_LUAR_BIDANG':'Titik NOP di luar bidang',
+               'TIDAK_ADA_TITIK':'Tidak ada titik NOP di bidang',
+               'TITIK_DI_LUAR_SEMUA_BIDANG':'Titik di luar semua bidang',
+               'NAMA_TIDAK_COCOK':'Nama tidak cocok'}
+NAME_STATES=[('COCOK','Cocok'),('MIRIP','Mirip'),('TIDAK_COCOK','Tidak cocok'),
+             ('TIDAK_DINILAI','Tidak dinilai')]
+
+
+def _point_parts(geom):
+    """List of points for (multi)point geometries (PBB titik), else None."""
+    try:
+        from qgis.core import QgsWkbTypes
+        if QgsWkbTypes.geometryType(geom.wkbType())!=QgsWkbTypes.PointGeometry:
+            return None
+        return geom.asMultiPoint() if geom.isMultipart() else [geom.asPoint()]
+    except (ImportError,TypeError,ValueError,AttributeError):
+        return None
+
+
+def position_label(row):
+    """Point candidates: inside the parcel, or outside with distance."""
+    if row.get('mode_geom')!='TITIK':return None
+    if row.get('titik_di_dalam')==1:return 'Di dalam'
+    dist=finite(row.get('jarak_geometri'))
+    return ('Luar %.1f m'%dist).replace('.',',') if dist is not None else 'Di luar'
+
+
 def count_text(value):
     return format(int(value), ',').replace(',', '.')
 
 
 class Report:
     def __init__(self, folder, modnum, title, crs=None, metadata=None):
-        self.path=Path(folder)/('laporan_modul%d.pdf'%modnum)
+        # Modul 3.1 (PBB titik) -> laporan_modul3_1.pdf
+        self.path=Path(folder)/('laporan_modul%s.pdf'%str(modnum).replace('.','_'))
         self.pdf=QPdfWriter(str(self.path));set_pdf_a4(self.pdf);self.pdf.setResolution(120)
         self.p=QPainter(self.pdf)
         if not self.p.isActive():
@@ -146,17 +184,21 @@ class Report:
         if limit is not None and len(rows)>limit:self.text('Rincian lengkap tersedia pada rekap_csv.zip.',9,color=MUTED)
         self.y+=16
     def module3_brief(self, lev1, lev2b, lev2p, pairs, stats, notes, actions,
-                      bpn_all, pbb_all, overlap_threshold, similarity_threshold):
+                      bpn_all, pbb_all, overlap_threshold, similarity_threshold,
+                      point_tol=None):
+        """point_tol is given for Modul 3.1 (PBB titik); otherwise polygon wording."""
+        point=point_tol is not None
+        none_code='TIDAK_ADA_TITIK' if point else 'TIDAK_ADA_IRISAN'
         """Editorial first page: every count is derived from the current run."""
         self.stats=dict(stats);self.notes=list(notes);self.actions=list(actions)
         p=self.p; l=self.l; right=self.w-self.r; x=l+168; content=right-x
         b_total=len(bpn_all) if bpn_all is not None else len(lev1)+len(lev2b)
         p_total=len(pbb_all) if pbb_all is not None else len(lev1)+len(lev2p)
-        no_pair=[row for row in lev2b if 'TIDAK_ADA_IRISAN' in str(row['a'].get('kode_l2',''))]
+        no_pair=[row for row in lev2b if none_code in str(row['a'].get('kode_l2',''))]
         studio=max(0,len(lev2b)-len(no_pair))
         categories=[('Level 1 · lolos otomatis',len(lev1),LEVEL_1),
                     ('Level 2 · perlu studio',studio,LEVEL_2),
-                    ('Tanpa calon beririsan',len(no_pair),NO_PAIR)]
+                    ('Tanpa titik NOP' if point else 'Tanpa calon beririsan',len(no_pair),NO_PAIR)]
         denom=sum(n for _,n,_ in categories)
         def label(xx, yy, value, size=9, bold=False, color=INK):
             self.font(size,bold);p.setPen(QPen(color));p.drawText(int(xx),int(yy),str(value))
@@ -209,31 +251,32 @@ class Report:
             p.setPen(QPen(GRID,1));p.drawLine(x,yy+9,right,yy+9)
         section(533,'Alasan Level 2')
         reasons=Counter(code.strip() for row in lev2b for code in
-                        str(row['a'].get('kode_l2','')).split(';') if code.strip() and code.strip()!='TIDAK_ADA_IRISAN')
-        translations={'OVERLAP_KURANG':'Irisan di bawah ambang',
-                      'LUAS_BPN_TIDAK_SESUAI':'Luas BPN di luar ambang',
+                        str(row['a'].get('kode_l2','')).split(';') if code.strip() and code.strip()!=none_code)
+        translations=dict(REASON_LABELS)
+        translations.update({'LUAS_BPN_TIDAK_SESUAI':'Luas BPN di luar ambang',
                       'LUAS_PBB_TIDAK_SESUAI':'Luas PBB di luar ambang',
                       'LUAS_TERTULIS_TIDAK_SAMA':'Kesamaan luas di bawah ambang',
-                      'MULTI_NOP':'Beberapa calon NOP','MULTI_NIB':'Beberapa calon NIB',
-                      'NIB_KOSONG':'NIB kosong','NOP_KOSONG':'NOP kosong',
-                      'NIB_DUPLIKAT':'NIB duplikat','NOP_DUPLIKAT':'NOP duplikat',
-                      'TANPA_NIB':'Tanpa calon NIB','TANPA_NOP':'Tanpa calon NOP'}
+                      'MULTI_NOP':'Beberapa calon NOP','MULTI_NIB':'Beberapa calon NIB'})
         label(x,560,'Alasan yang tercatat pada bidang BPN',9,True,NAVY)
         for i,(code,n) in enumerate(reasons.most_common(4)):
             yy=586+i*26
             label(x,yy,translations.get(code,metric_label(code)),9)
             label(x+content*.57,yy,count_text(n),9,True)
-            p.setPen(QPen(GRID,1));p.drawLine(x,yy+8,x+content*.67,yy+8)
+            p.setPen(QPen(GRID,1));p.drawLine(x,yy+8,int(x+content*.67),yy+8)
         if not reasons:paragraph(x,590,'Tidak ada alasan Level 2 yang tercatat.',content,1,9,MUTED)
         paragraph(x,699,'Satu bidang dapat memiliki beberapa alasan; jumlah alasan tidak dijumlahkan sebagai jumlah bidang.',content,2,8,MUTED)
         section(721,'Contoh pasangan')
         samples=[row for row in pairs if row.get('status')=='LEVEL_2']
         if not samples:samples=list(pairs)
-        samples=sorted(samples,key=lambda row:finite(row.get('overlap_bpn_pct')) if finite(row.get('overlap_bpn_pct')) is not None else 101)[:6]
+        if point:
+            samples=sorted(samples,key=lambda row:(row.get('titik_di_dalam') or 0,
+                                                   -(finite(row.get('jarak_geometri')) or 0)))[:6]
+        else:
+            samples=sorted(samples,key=lambda row:finite(row.get('overlap_bpn_pct')) if finite(row.get('overlap_bpn_pct')) is not None else 101)[:6]
         label(x,749,'Kandidat untuk ditelaah · %s dari %s; rincian lengkap di rekap_csv.zip' %
               (len(samples),count_text(len(pairs))),8,color=MUTED)
         cols=[x,x+110,x+335,x+415,x+490]
-        for xx,head in zip(cols,['NIB','NOP','Overlap %','Kes. luas %','Alasan']):label(xx,777,head,8,True,MUTED)
+        for xx,head in zip(cols,['NIB','NOP','Posisi titik' if point else 'Overlap %','Kes. luas %','Alasan']):label(xx,777,head,8,True,MUTED)
         p.setPen(QPen(MUTED,1));p.drawLine(x,786,right,786)
         for i,row in enumerate(samples):
             yy=810+i*32
@@ -245,8 +288,12 @@ class Report:
                 label(xx,yy,fm.elidedText(value,ELIDE_RIGHT,width),8)
             ov=finite(row.get('overlap_bpn_pct'))
             sim=finite(row.get('kesamaan_luas_tulis',row.get('kesamaan_pct')))
-            label(cols[2],yy,('%.1f'%ov).replace('.',',') if ov is not None else '—',8,
-                  color=LEVEL_2_TEXT if ov is not None and ov<=overlap_threshold else INK)
+            if point:
+                where=position_label(row) or '—'
+                label(cols[2],yy,where,8,color=INK if where=='Di dalam' else LEVEL_2_TEXT)
+            else:
+                label(cols[2],yy,('%.1f'%ov).replace('.',',') if ov is not None else '—',8,
+                      color=LEVEL_2_TEXT if ov is not None and ov<=overlap_threshold else INK)
             label(cols[3],yy,('%.1f'%sim).replace('.',',') if sim is not None else '—',8,
                   color=LEVEL_2_TEXT if sim is not None and sim<=similarity_threshold else INK)
             codes=[code.strip() for code in str(row.get('alasan') or row.get('kode_l2') or '').split(';') if code.strip()]
@@ -258,7 +305,9 @@ class Report:
         section(1024,'Parameter dan')
         label(l,1068,'jejak audit',10,True,NAVY)
         facts=[('Layer',str(self.metadata.get('layer_bpn') or 'tidak tercatat')+' · '+str(self.metadata.get('layer_pbb') or 'tidak tercatat')),
-               ('Ambang','overlap > %g %% · kesamaan luas > %g %%' % (overlap_threshold,similarity_threshold)),
+               ('Ambang',('titik di dalam bidang · toleransi %g m · kesamaan luas > %g %%' % (point_tol,similarity_threshold))
+                         if point else
+                         'overlap > %g %% · kesamaan luas > %g %%' % (overlap_threshold,similarity_threshold)),
                ('CRS',str(self.metadata.get('crs') or self.crs or 'tidak tercatat')),
                ('Operator',str(self.metadata.get('operator') or 'tidak tercatat')),
                ('sha256 input',str(self.metadata.get('hash') or 'tidak tercatat'))]
@@ -335,7 +384,7 @@ class Report:
                 barheight=(v/ymax)*(bottom-ytop)
                 x=cx+(j-(len(series)-1)/2)*bw*1.3-bw*.5
                 color,role=(category_style(label) if len(series)==1 else series_style(legend))
-                if self.num==3 and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
+                if self.num in (3,'3.1') and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
                 self.p.fillRect(int(x),int(bottom-barheight),int(bw),int(barheight),fill_for(color,role))
                 self.font(9);self.p.setPen(QPen(INK))
                 self.p.drawText(int(x-4),int(bottom-barheight-9),nice(round(v,2))+value_suffix)
@@ -365,7 +414,7 @@ class Report:
         self.y+=15
         for i,label in enumerate(labels):
             self.font(9)
-            marker=self.num==3 and 'Alasan Level 2' in self.heading
+            marker=self.num in (3,'3.1') and 'Alasan Level 2' in self.heading
             lines=self.wrapped(str(label),label_col-(28 if marker else 12))
             row_h=max(base_row_h,18*len(lines)+10)
             if self.y+row_h>self.bottom-78:self.start('LANJUTAN GRAFIK')
@@ -378,7 +427,7 @@ class Report:
                 yy=self.y+row_h/2+(j-len(series)/2)*bh
                 ww=int((xright-x0)*v/vmax)
                 color,role=(category_style(label) if len(series)==1 else series_style(name))
-                if self.num==3 and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
+                if self.num in (3,'3.1') and 'Alasan Level 2' in self.heading:color,role=LEVEL_2,'level2'
                 self.p.fillRect(int(x0),int(yy),max(0,ww),max(3,bh-1),fill_for(color,role))
                 self.p.setPen(QPen(MUTED));self.font(9)
                 self.p.drawText(int(x0+max(0,ww)+7),int(yy+bh-2),nice(v)+suffix)
@@ -597,6 +646,19 @@ class Report:
         self.p.setClipRect(int(left),int(top),int(right-left),int(bottom-top))
         marked_small=False
         for geom,color,role,edge in valid:
+            pts=_point_parts(geom)
+            if pts is not None:
+                # PBB titik: diamond for Level 2, dot otherwise; solid fill keeps
+                # small symbols legible (hatching is not visible at this size).
+                fill=QColor(color);fill.setAlpha(230)
+                self.p.setPen(QPen(QColor(edge).darker(130),.9));self.p.setBrush(QBrush(fill))
+                for pt in pts:
+                    c=xy(pt)
+                    if role=='level2-map':
+                        self.p.drawPolygon(QPolygonF([QPointF(c.x(),c.y()-4.5),QPointF(c.x()+4.5,c.y()),
+                                                      QPointF(c.x(),c.y()+4.5),QPointF(c.x()-4.5,c.y())]))
+                    else:self.p.drawEllipse(c,3.4,3.4)
+                continue
             geompolys=[]
             try:
                 if geom.isMultipart():geompolys=geom.asMultiPolygon()
@@ -966,7 +1028,43 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
     return r.close()
 
 
-def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None,crs=None,metadata=None,overlap_threshold=50,similarity_threshold=90):
+def _name_strength_pages(r,pairs,number,names_used,point):
+    """Name validation (optional) and Level 1 strength pages for Modul 3 / 3.1."""
+    accepted=[p for p in pairs if p.get('status')=='LEVEL_1']
+    if names_used and pairs:
+        r.figpage(number,'Validasi nama NIB-NOP',
+                  'Kesamaan nama pemegang hak (BPN) dan wajib pajak (PBB). Nama berbeda tidak selalu '
+                  'berarti salah (jual beli, waris, alias); gunakan sebagai prioritas verifikasi.')
+        r.bar([label for _,label in NAME_STATES],
+              [('Level 1',[sum(1 for p in accepted if p.get('valid_nama')==code) for code,_ in NAME_STATES]),
+               ('Semua kandidat',[sum(1 for p in pairs if p.get('valid_nama')==code) for code,_ in NAME_STATES])])
+        number+=1
+    if accepted:
+        r.figpage(number,'Kekuatan padanan Level 1',
+                  ('KUAT: titik di dalam bidang dan nama cocok; SEDANG: nama mirip atau tidak dinilai; '
+                   'LEMAH: nama bertentangan.') if point else
+                  ('KUAT: gerbang spasial dan luas lolos, nama tidak bertentangan; '
+                   'SEDANG: nama tidak cocok.'))
+        r.bar(['KUAT','SEDANG','LEMAH'],[('Level 1',[sum(1 for p in accepted if p.get('kekuatan')==k)
+                                                    for k in ('KUAT','SEDANG','LEMAH')])])
+        number+=1
+    return number
+
+
+def _strength_table(r,pairs,point):
+    accepted=[p for p in pairs if p.get('status')=='LEVEL_1']
+    if not accepted:return
+    order={'LEMAH':0,'SEDANG':1,'KUAT':2}
+    r.sub('Pasangan Level 1 menurut kekuatan (terlemah lebih dulu)')
+    r.table(['NIB','NOP','Kes. luas %','Nama','Kekuatan'],
+            [(v.get('NIB',''),v.get('NOP',''),nice(v.get('kesamaan_luas_tulis')),
+              str(v.get('valid_nama') or '').replace('_',' ').capitalize(),v.get('kekuatan',''))
+             for v in sorted(accepted,key=lambda x:(order.get(x.get('kekuatan'),3),
+                                                     finite(x.get('skor_nama')) or 0))],
+            [r.cw*.24,r.cw*.30,r.cw*.14,r.cw*.17,r.cw*.15],limit=25)
+
+
+def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None,crs=None,metadata=None,overlap_threshold=50,similarity_threshold=90,names_used=False):
     r=Report(folder,3,'Penentuan level pemaduan berbasis aturan',crs,metadata)
     whys=Counter(code.strip() for row in lev2b+lev2p for code in str(row['a'].get('kode_l2','')).split(';') if code.strip())
     actions=[]
@@ -993,16 +1091,7 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
         r.bar(['Level 1','BPN Level 2','PBB Level 2'],[('Record',[len(lev1),len(lev2b),len(lev2p)])])
     common=whys.most_common(16)
     if common:
-        reasons={'TIDAK_ADA_IRISAN':'Tidak ada bidang beririsan',
-                 'OVERLAP_KURANG':'Irisan di bawah ambang',
-                 'MULTI_NOP':'Satu BPN memiliki beberapa calon PBB',
-                 'MULTI_NIB':'Satu PBB memiliki beberapa calon BPN',
-                 'NIB_KOSONG':'NIB kosong','NOP_KOSONG':'NOP kosong',
-                 'NIB_DUPLIKAT':'NIB duplikat','NOP_DUPLIKAT':'NOP duplikat',
-                 'LUAS_BPN_TIDAK_SESUAI':'Luas BPN tidak sesuai',
-                 'LUAS_PBB_TIDAK_SESUAI':'Luas PBB tidak sesuai',
-                 'LUAS_TERTULIS_TIDAK_SAMA':'Luas tertulis tidak sepadan',
-                 'TANPA_NOP':'Tanpa calon NOP','TANPA_NIB':'Tanpa calon NIB'}
+        reasons=REASON_LABELS
         r.figpage(2,'Alasan Level 2','Satu record dapat memiliki beberapa alasan.')
         r.bar([reasons.get(k,k.replace('_',' ').capitalize()) for k,_ in common],
               [('Frekuensi',[v for _,v in common])],horizontal=True)
@@ -1017,6 +1106,7 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
         r.xy_scatter([(p.get('overlap_bpn_pct'),p.get('kesamaan_luas_tulis',p.get('kesamaan_pct')))
                       for p in pairs], 'Overlap BPN (%)','Kesamaan luas (%)',
                      x_threshold=overlap_threshold,y_threshold=similarity_threshold)
+    _name_strength_pages(r,pairs,5,names_used,False)
     b_rows=bpn_all if bpn_all is not None else lev1+lev2b
     p_rows=pbb_all if pbb_all is not None else lev2p
     level1_pbb_ids={pair['record_pbb'] for pair in pairs if pair.get('status')=='LEVEL_1'}
@@ -1040,8 +1130,91 @@ def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=
         r.table(['NIB','NOP','Overlap BPN %','Overlap PBB %'],
                 [(v.get('NIB',''),v.get('NOP',''),nice(v.get('overlap_bpn_pct')),nice(v.get('overlap_pbb_pct')))
                  for v in sorted(pairs,key=lambda x:-(finite(x.get('overlap_bpn_pct')) or 0))[:20]])
+        if names_used:_strength_table(r,pairs,False)
     r.footer_recommendations(actions,
-        ['rekap_csv.zip: seluruh pasangan kandidat, overlap internal, gap, dan alasan Level 2.'])
+        ['rekap_csv.zip: seluruh pasangan kandidat (termasuk skor_nama, valid_nama, kekuatan), overlap internal, gap, dan alasan Level 2.'])
+    return r.close()
+
+
+def report3_1(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,crs=None,
+              metadata=None,point_tol=5,similarity_threshold=90,names_used=False):
+    """Modul 3.1: rule-based levels when PBB is only available as NOP points."""
+    r=Report(folder,'3.1','Penentuan level pemaduan PBB titik (NOP)',crs,metadata)
+    whys=Counter(code.strip() for row in lev2b+lev2p for code in str(row['a'].get('kode_l2','')).split(';') if code.strip())
+    accepted=[p for p in pairs if p.get('status')=='LEVEL_1']
+    actions=[]
+    if lev2b or lev2p:
+        top=whys.most_common(1)
+        reason=(' Alasan terbanyak: %s (%s record).'%(REASON_LABELS.get(top[0][0],top[0][0]),count_text(top[0][1]))
+                if top else '')
+        actions.append(('Verifikasi Level 2 di studio',
+            '%s BPN dan %s titik PBB belum memenuhi seluruh gerbang pemaduan.%s'%
+            (count_text(len(lev2b)),count_text(len(lev2p)),reason)))
+    weak=[p for p in accepted if p.get('kekuatan') in ('SEDANG','LEMAH')]
+    if weak:
+        actions.append(('Prioritaskan Level 1 berkekuatan SEDANG/LEMAH',
+            '%s pasangan Level 1 hanya didukung posisi titik%s. Cocokkan dengan dokumen sumber.'%
+            (count_text(len(weak)),'' if names_used else '; kolom nama belum dipilih')))
+    multi=whys.get('MULTI_NOP',0)
+    if multi:actions.append(('Telaah beberapa titik dalam satu bidang',
+        '%s record memiliki lebih dari satu titik NOP di dalam bidang yang sama; kolom calon_nama membantu memilih calon.'%count_text(multi)))
+    if not actions:actions.append(('Periksa input dan ambang',
+        'Tidak ada pasangan Level 1 atau record Level 2 pada keluaran ini; pastikan layer dan parameter yang dipilih tepat.'))
+    r.module3_brief(lev1,lev2b,lev2p,pairs,stats,notes,actions,
+                    bpn_all,pbb_all,None,similarity_threshold,point_tol=point_tol)
+    if lev1 or lev2b or lev2p:
+        r.figpage(1,'Distribusi level pemaduan','Jumlah pasangan Level 1 dan record yang memerlukan verifikasi studio.')
+        r.bar(['Level 1','BPN Level 2','PBB Level 2'],[('Record',[len(lev1),len(lev2b),len(lev2p)])])
+    common=whys.most_common(16)
+    if common:
+        r.figpage(2,'Alasan Level 2','Satu record dapat memiliki beberapa alasan.')
+        r.bar([REASON_LABELS.get(k,k.replace('_',' ').capitalize()) for k,_ in common],
+              [('Frekuensi',[v for _,v in common])],horizontal=True)
+    if pairs:
+        inside=sum(1 for p in pairs if p.get('titik_di_dalam')==1)
+        r.figpage(3,'Posisi titik NOP terhadap bidang BPN',
+                  'Titik di dalam bidang memenuhi syarat spasial; titik di luar bidang hingga %g m hanya calon Level 2.'%point_tol)
+        r.bar(['Di dalam bidang','Di luar bidang (toleransi)'],[('Kandidat',[inside,len(pairs)-inside])])
+        r.figpage(4,'Kesamaan luas pada kandidat titik',
+                  'Luas tertulis PBB dibandingkan luas geometri BPN (X) dan luas tertulis BPN (Y).')
+        r.xy_scatter([(p.get('kesamaan_luas_geom'),p.get('kesamaan_luas_tulis')) for p in pairs],
+                     'Luas tertulis PBB vs luas geometri BPN (%)','Kesamaan luas tertulis (%)',
+                     y_threshold=similarity_threshold)
+    _name_strength_pages(r,pairs,5,names_used,True)
+    p_rows=pbb_all if pbb_all is not None else lev2p
+    level1_pbb_ids={pair['record_pbb'] for pair in accepted}
+    lev1p=[row for row in p_rows if row['idx'] in level1_pbb_ids]
+    outside=[row for row in lev2p if 'TITIK_DI_LUAR_SEMUA_BIDANG' in str(row['a'].get('kode_l2',''))]
+    outside_ids={row['idx'] for row in outside}
+    studio_pbb=[row for row in lev2p if row['idx'] not in outside_ids]
+    if lev2b or lev1:
+        r.start('Level pemaduan BPN')
+        r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
+               'Distribusi pasangan otomatis dan bidang studio')
+    if outside or studio_pbb or lev1p:
+        r.start('Level pemaduan titik PBB')
+        b_rows=bpn_all if bpn_all is not None else lev1+lev2b
+        r.map([(b_rows,NO_PAIR,None,'Bidang BPN (latar)'),
+               (outside,NO_PAIR,None,'Titik di luar semua bidang'),
+               (studio_pbb,LEVEL_2,None,'Titik PBB Level 2'),
+               (lev1p,LEVEL_1,None,'Titik PBB Level 1')],
+               'Titik NOP di atas bidang BPN')
+    if pairs:
+        r.start('Rekap pasangan dan kandidat')
+        _strength_table(r,pairs,True)
+        studio=[p for p in pairs if p.get('status')=='LEVEL_2']
+        if studio:
+            r.sub('Calon Level 2 untuk studio')
+            r.table(['NIB','NOP','Posisi','Nama','Alasan'],
+                    [(v.get('NIB',''),v.get('NOP',''),position_label(v) or '',
+                      str(v.get('valid_nama') or '').replace('_',' ').capitalize(),
+                      '; '.join(REASON_LABELS.get(c,c) for c in str(v.get('alasan','')).split(';') if c))
+                     for v in sorted(studio,key=lambda x:(x.get('titik_di_dalam') or 0,
+                                                          finite(x.get('jarak_geometri')) or 0))],
+                    [r.cw*.2,r.cw*.26,r.cw*.13,r.cw*.13,r.cw*.28],limit=20)
+    r.footer_recommendations(actions,
+        ['rekap_csv.zip: seluruh kandidat titik-bidang (posisi, jarak, skor_nama, valid_nama, kekuatan), titik berimpit, gap, dan alasan Level 2.',
+         'Layer 03_pbb_level2 disimpan sebagai titik; 01_padanan_level1 memakai bidang BPN.'])
     return r.close()
 
 

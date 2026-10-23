@@ -21,6 +21,22 @@ Sebuah pasangan (BPN *i*, PBB *j*) menjadi **Level 1** hanya bila **tidak ada** 
 Rumus: `deviasi % = 100·|tertulis − luas_geom| / luas_geom`; `kesamaan % = 100·min(a,b)/max(a,b)`; `overlap_bpn % = 100·irisan/luas_BPN`.
 Ambang sama (`50.0 %` tepat) **tidak lolos**. Irisan kecil-kecil tidak otomatis menggugurkan bila hanya satu calon di atas ambang; dua calon di atas ambang **wajib** Level 2.
 
+### 1b. Modul 3.1 (PBB titik) dan validasi nama (v0.9.5)
+
+Modul 3.1 dipakai bila layer PBB bertipe titik (`engine.point_mode`); Modul 3 menolak PBB titik. Aturan:
+
+| Kode alasan | Kondisi gagal |
+|---|---|
+| `TITIK_DI_LUAR_BIDANG` | Titik NOP tidak berada di dalam/pada batas bidang BPN (menggantikan `OVERLAP_KURANG`); calon dibuat bila jarak ≤ `point_tol` (5 m) |
+| `MULTI_NOP` / `MULTI_NIB` | > 1 titik di dalam satu bidang / titik di dalam > 1 bidang |
+| `LUAS_PBB_TIDAK_SESUAI` | Deviasi luas tertulis PBB **terhadap luas geometri BPN** > `max_dev` |
+| `TIDAK_ADA_TITIK` | (BPN Level 2) tidak ada titik di dalam/dekat bidang |
+| `TITIK_DI_LUAR_SEMUA_BIDANG` | (PBB Level 2) titik tidak berada di/dekat bidang mana pun |
+
+Validasi nama (opsional, `logic.name_similarity` / `name_status`): `valid_nama` = `COCOK` (≥ `name_match` 90 %), `MIRIP` (≥ `name_partial` 60 %), `TIDAK_COCOK`, `TIDAK_DINILAI`. Gerbang `NAMA_TIDAK_COCOK` hanya aktif bila `require_name` dicentang; `TIDAK_DINILAI` tidak pernah menggugurkan. `kekuatan` Level 1 (`logic.match_strength`): titik — COCOK→KUAT, MIRIP/TIDAK_DINILAI→SEDANG, TIDAK_COCOK→LEMAH; poligon — TIDAK_COCOK→SEDANG, lainnya KUAT.
+
+Pengisian fitur untuk kandidat titik: `overlap_bpn_pct = overlap_pbb_pct = 100` (di dalam) atau `0`; `iou = 0`; `kesamaan_luas_geom` = luas tertulis PBB vs luas geometri BPN; `deviasi_luas_pbb` = luas tertulis PBB vs luas geometri BPN; `jarak_centroid` = centroid BPN → titik; `jarak_geometri` = jarak titik ke bidang (0 bila di dalam); `kesamaan_bentuk` kosong (diimputasi). Model mencatat `mode_geometri_pbb` (`POLIGON`/`TITIK`).
+
 **Level 2** = butuh verifikasi studio. *Bukan* pasangan salah dan *bukan* label negatif.
 
 ## 2. Label untuk AI
@@ -64,6 +80,8 @@ Verdict operasional (`operational_assessment`): `BELUM DAPAT DINILAI` → `BELUM
 | NOP | Nomor Objek Pajak PBB |
 | BPN / PBB | Badan Pertanahan Nasional / Pajak Bumi dan Bangunan |
 | Bidang | Satu poligon persil |
+| Titik NOP | Lokasi objek pajak PBB tanpa poligon bidang |
+| Validasi nama | Kesamaan nama pemegang hak (BPN) dan wajib pajak (PBB) sebagai penguat padanan |
 | Overlap | Irisan antar poligon; *internal* (dalam satu layer) vs *antar-sumber* (BPN×PBB) |
 | Gap | Lubang tertutup pada gabungan poligon BPN; kandidat bidang tambahan |
 | Fix geometry | `makeValid` pada poligon invalid |

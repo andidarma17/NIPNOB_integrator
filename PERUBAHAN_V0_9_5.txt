@@ -1,0 +1,30 @@
+NIB-NOP INTEGRATOR v0.9.5 - MODUL 3.1 (PBB TITIK) DAN VALIDASI NAMA
+
+- Modul 3 tetap untuk PBB poligon (aturan tidak berubah) + validasi nama opsional;
+  PBB titik ditolak dengan arahan ke Modul 3.1.
+- Modul 3.1 baru (menu "3.1 Penentuan level pemaduan PBB titik (NOP)") khusus PBB titik;
+  keluaran modul_3_1/, laporan_modul3_1.pdf, manifest_modul3_1.json.
+- Modul 1, 2, 4, 5, 6 menerima PBB poligon maupun titik; BPN tetap poligon. Modul 5
+  memakai baseline Modul 3 (poligon) atau Modul 3.1 (titik).
+- Modul 3.1: syarat spasial "titik NOP di dalam bidang BPN" menggantikan
+  overlap; titik di luar bidang hingga toleransi (bawaan 5 m) hanya calon Level 2
+  (TITIK_DI_LUAR_BIDANG). Alasan baru: TIDAK_ADA_TITIK, TITIK_DI_LUAR_SEMUA_BIDANG.
+- Deviasi luas PBB titik = luas tertulis PBB terhadap luas geometri BPN.
+- Kolom nama opsional (BPN: pemegang hak, PBB: wajib pajak) pada Modul 3, 3.1, 5, 6.
+  Setelah kandidat NIB-NOP terbentuk, nama dibandingkan sebagai validasi:
+  skor_nama (0-100), valid_nama (COCOK/MIRIP/TIDAK_COCOK/TIDAK_DINILAI),
+  kekuatan Level 1 (KUAT/SEDANG/LEMAH), calon_nama pada Level 2.
+  Normalisasi gelar/sapaan, ejaan lama, varian Muhammad, urutan kata.
+- Opsi "Nama TIDAK COCOK menurunkan pasangan ke Level 2" (bawaan mati).
+- Modul 2: titik PBB berimpit ditandai overlap=1 (TITIK_BERIMPIT di CSV).
+- PDF Modul 3: halaman validasi nama, kekuatan padanan, tabel Level 1 per kekuatan.
+- PDF Modul 3.1 (laporan_modul3_1.pdf): ikhtisar titik, alasan Level 2, posisi titik,
+  kesamaan luas, validasi nama, kekuatan, peta titik di atas bidang BPN, tabel studio.
+- Peta PDF semua modul dapat menggambar titik PBB. Modul 6: kolom posisi titik dan nama.
+- Perbaikan: ikhtisar PDF Modul 3 gagal dibuat (TypeError drawLine float) pada PyQt5
+  dengan Python 3.10+ ketika ada alasan Level 2.
+- AI: metadata model mencatat mode_geometri_pbb; model poligon tidak dipakai untuk
+  data titik dan sebaliknya. Nama bukan fitur model (18 fitur tidak berubah).
+- Mode poligon: aturan Level 1/2 tidak berubah; kolom nama hanya menambah informasi.
+- Uji unit baru: gerbang titik, gerbang nama, kekuatan, normalisasi & kesamaan nama,
+  dropdown nama opsional.
