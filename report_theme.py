@@ -34,8 +34,10 @@ CAUTION_BG = QColor('#FFF1EE')
 
 # Additional roles absent from the supplied palette. They are intentionally
 # distinct from dataset and level colours.
-GAP = QColor('#788892')
-INVALID = QColor('#53636E')
+GAP = QColor('#167FA1')
+GAP_EDGE = QColor('#0C536A')
+INVALID = QColor('#AA5722')
+INVALID_EDGE = QColor('#713A18')
 MODEL_RF = QColor('#096B63')
 MODEL_XGB = QColor('#202831')
 
@@ -68,7 +70,7 @@ def hatch_brush(colour, role, alpha=255):
 
 
 def fill_for(colour, role=None, alpha=255):
-    if role in ('pbb-map', 'level2-map'):
+    if role in ('pbb-map', 'level2-map', 'invalid-map'):
         return hatch_brush(colour, role, alpha)
     plain = QColor(colour)
     plain.setAlpha(alpha)
@@ -112,9 +114,9 @@ def map_style(label, colour):
     if 'overlap' in name:
         return OVERLAP, None, OVERLAP
     if 'gap' in name:
-        return GAP, None, GAP
+        return GAP, 'gap-map', GAP_EDGE
     if 'invalid' in name:
-        return INVALID, None, INVALID
+        return INVALID, 'invalid-map', INVALID_EDGE
     if name.startswith('pbb diverifikasi'):
         return PBB, 'pbb-map', PBB_EDGE
     if name.startswith('bpn diverifikasi'):

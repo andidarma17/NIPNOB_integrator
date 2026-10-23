@@ -9,7 +9,7 @@
 
 ## Redesain aktif: laporan audit editorial
 
-Mode baca: halaman pertama menyajikan kesimpulan, batasan interpretasi, hasil utama, tindak lanjut, dan jejak audit dalam urutan baca tetap. Modul 3 menambah distribusi hasil, alasan Level 2, dan contoh pasangan pada halaman pertama, mengikuti contoh editorial yang diberikan pengguna. Angka selalu berasal dari hasil proses; jumlah input dan jumlah record keluaran diberi nama terpisah bila berbeda. Grafik dan peta berikutnya mengikuti isi data; CSV tetap menjadi rujukan record penuh.
+Mode baca: halaman pertama keenam modul mengikuti tata letak editorial contoh: kesimpulan, batasan interpretasi, hasil terukur, bukti atau contoh record, dan jejak audit. Setiap modul memilih bukti yang sesuai: kolom kosong dan kualitas luas (M1), QA geometri dan overlap terbesar (M2), distribusi Level serta alasan dan contoh pasangan (M3), status GOLD dan hasil TEST (M4), distribusi Level serta kandidat AI (M5), keputusan serta kelengkapan bukti (M6). Modul 1, 2, 4, 5, dan 6 memakai komponen `EditorialPage` bersama; Modul 3 mempertahankan komposisi khusus contoh. Angka selalu berasal dari hasil proses; jumlah input dan jumlah record keluaran diberi nama terpisah bila berbeda. Grafik dan peta berikutnya mengikuti isi data; CSV tetap menjadi rujukan record penuh.
 
 ### Sistem visual
 
@@ -18,10 +18,10 @@ Mode baca: halaman pertama menyajikan kesimpulan, batasan interpretasi, hasil ut
 | Struktur | `#1E2250` | Pita atas, judul, header tabel |
 | Dataset | BPN `#3A3F9E`, PBB `#A36A00` | PBB memakai arsiran 135° pada peta |
 | Level | Level 1 `#0B7285`, Level 2 `#8F7A9E` | Level 2 memakai arsiran 45°; teks `#5E4B70` |
-| QA | overlap `#B5173A`, tanpa pasangan `#AEBBC7` | Simbol dan label menyertai warna |
+| QA | overlap `#B5173A`, gap `#167FA1`, invalid/fixed `#AA5722`, tanpa pasangan `#AEBBC7` | Gap bergaris putus-putus; invalid/fixed berarsir; lokasi kecil diberi lingkaran |
 | Teks dan garis | `#1B1F33`, `#52636F`, `#D5D9E4` | Hierarki tipografi dan grid cetak |
 
-Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header memakai pita indigo tipis, bidang abu pucat, nama modul, versi, dan garis pemisah. Isi memakai kalimat langsung dalam bahasa Indonesia. Status, Level, dan QA tidak dibedakan hanya oleh warna. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP pada tabel bukti penuh. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
+Source Sans 3 Regular/Bold dikemas bersama lisensi OFL. Header memakai pita indigo tipis, bidang abu pucat, nama modul, versi, dan garis pemisah di antara judul dan subjudul dengan jeda baca. Isi memakai kalimat langsung dalam bahasa Indonesia. Status, Level, dan QA tidak dibedakan hanya oleh warna. Tabel menggunakan baris adaptif dan tidak menghilangkan digit NIB/NOP pada tabel bukti penuh. Peta memotong geometri pada bingkai, menampilkan lubang poligon, CRS, skala, koordinat, dan arah utara.
 
 Palet D Indigo–Safron kembali menjadi token aktif berdasarkan acuan visual terbaru. Bagian 1–8 di bawah tetap merupakan riwayat baseline sebelum redesain.
 

@@ -8,7 +8,7 @@ from qgis.PyQt.QtGui import QPdfWriter, QPainter, QPen, QColor, QFontMetrics, QP
 from .report_theme import (NAVY, INK, MUTED, GRID as BORDER, TINT as PALE,
                            MODEL_RF, MODEL_XGB, GOOD_BG, BAD_BG)
 from .report_font import report_font
-from .report_frame import page_head, wrap, callout
+from .report_frame import EditorialPage, page_head, wrap, callout
 
 try:
     ELIDE_RIGHT=Qt.TextElideMode.ElideRight
@@ -104,64 +104,52 @@ class Canvas:
         self.y+=callout(self.p,self.ml,self.y,self.cw,text,
                         'warning' if kind in ('caution','bad') else 'note')+18
     def editorial_intro(self,evaldata,selected,has_test,verdict):
-        p=self.p;x=self.ml+168;right=self.w-self.mr;content=right-x
-        def label(xx,yy,value,size=9,bold=False,color=INK):
-            self.font(size,bold);p.setPen(QPen(color));p.drawText(int(xx),int(yy),str(value))
-        def para(xx,yy,value,width,size=9,color=INK,limit=3):
-            self.font(size);p.setPen(QPen(color))
-            lines=self.wrapped(value,width)[:limit]
-            for i,line in enumerate(lines):p.drawText(int(xx),int(yy+i*19),line)
-            return len(lines)
-        def section(yy,title):
-            p.setPen(QPen(BORDER,1));p.drawLine(self.ml,int(yy),right,int(yy))
-            label(self.ml,yy+27,title,10,True,NAVY)
-        y=self.y+5
-        section(y,'Kesimpulan')
-        y+=44
-        lines=para(x,y,verdict,content,15,NAVY,3)
-        y+=max(40,lines*26)
-        section(y,'Batasan interpretasi')
-        y+=42
-        warning=('Belum ada data TEST GOLD independen; angka TRAIN tidak mengukur kinerja pada pasangan baru.'
-                 if not has_test else
-                 'Metrik TEST adalah bukti pengujian model, bukan izin otomatis menggabungkan NIB dan NOP.')
-        lines=para(x,y,'▪ '+warning,content,9,QColor('#7A1F1F'),3)
-        y+=max(48,lines*20)+9
-        section(y,'Hasil evaluasi')
-        y+=41
-        rows=[('Model terpilih',selected),('GOLD',str(evaldata.get('jumlah_gold',0))+' pasangan'),
-              ('SILVER',str(evaldata.get('jumlah_silver',0))+' label aturan'),
-              ('FIT / validasi / TEST','%s / %s / %s' %
-               (evaldata.get('jumlah_fit',0),evaldata.get('jumlah_validasi',0),evaldata.get('jumlah_testing',0)))]
-        tests=(evaldata.get('models',{}).get(selected,{}) .get('split',{}).get('TEST')
-               if has_test else None)
+        page=EditorialPage(self)
+        gold=int(evaldata.get('jumlah_gold',0) or 0)
+        testing=int(evaldata.get('jumlah_testing',0) or 0)
+        page.headline(verdict,
+                      '%s pasangan GOLD; %s dipakai untuk TEST.'%
+                      (format(gold,',').replace(',','.'),format(testing,',').replace(',','.')),
+                      'Tinjau pengujian GOLD' if not has_test else 'Periksa false positive',
+                      status_kind='unknown' if not has_test else 'caution')
+        page.limit('Metrik TRAIN menjelaskan data latihan; hasilnya tidak mengukur kinerja pada pasangan baru.',
+                   'Skor AI dan metrik TEST bukan bukti administratif pasangan NIB–NOP.')
+        page.section('Data yang dipakai')
+        rows=[('Model terpilih',selected),
+              ('GOLD independen',str(gold)),
+              ('SILVER hasil aturan',str(evaldata.get('jumlah_silver',0))),
+              ('FIT / validasi','%s / %s'%(evaldata.get('jumlah_fit',0),
+                                           evaldata.get('jumlah_validasi',0))),
+              ('TEST GOLD',str(testing))]
+        page.table(['Komponen','Jumlah / nilai'],rows,[.47,.53],row_min=29)
+        page.section('Hasil uji model')
+        tests=[]
+        if has_test:
+            for name,detail in evaldata.get('models',{}).items():
+                metric=(detail.get('split') or {}).get('TEST')
+                if metric:
+                    tests.append((name,fmt(metric.get('precision')),
+                                  str(metric.get('fp','—')),
+                                  fmt(metric.get('precision_ci95_bawah'))))
         if tests:
-            rows += [('Precision TEST',fmt(tests.get('precision'))),
-                     ('False positive TEST',str(tests.get('fp','—')))]
-        else:rows.append(('Precision TEST','Belum dapat dinilai'))
-        for i,(name,value) in enumerate(rows):
-            yy=y+i*35
-            if i%2:p.fillRect(x,yy-17,content,34,PALE)
-            label(x+8,yy,name,9,color=MUTED)
-            label(x+228,yy,value,9,True,NAVY)
-            p.setPen(QPen(BORDER,1));p.drawLine(x,yy+12,right,yy+12)
-        y+=len(rows)*35+10
-        section(y,'Tindak lanjut')
-        y+=43
+            page.table(['Model','Precision','FP','Batas bawah CI95'],tests,
+                       [.34,.20,.12,.34],row_min=31)
+            page.label(page.x,page.y,'TEST berasal dari GOLD independen; FP adalah pasangan salah yang diterima.',8,color=MUTED)
+            page.y+=21
+        else:
+            page.paragraph('BELUM DAPAT DINILAI: tidak ada TEST GOLD independen. '
+                           'Kumpulkan keputusan studio berbukti dan sisihkan data uji.',9,True,NAVY,max_lines=3)
+            page.y+=8
+        page.section('Tindak lanjut')
         actions=evaldata.get('rekomendasi',[])[:3]
-        if not actions:actions=['Tinjau hasil evaluasi dan catatan model sebelum digunakan.']
+        if not actions:actions=['Tinjau hasil pengujian dan bukti setiap pasangan sebelum memakai model.']
         for i,action in enumerate(actions,1):
-            label(x,y,'T%d'%i,9,True,NAVY)
-            lines=para(x+32,y,action,content-32,9,INK,3)
-            y+=max(48,lines*19+9)
-        section(y+5,'Parameter dan')
-        label(self.ml,y+48,'jejak audit',10,True,NAVY)
-        y+=45
-        for name,value in [('Ambang skor',str(evaldata.get('ambang_prediksi','tidak tercatat'))),
-                           ('Target precision',fmt(evaldata.get('target_precision_usulan'),kind='pct')),
-                           ('Data uji','GOLD independen' if has_test else 'belum tersedia')]:
-            y+=23;label(x,y,name,9,color=MUTED);label(x+140,y,value,9)
-        self.y=y+36
+            page.label(page.x,page.y,'T%d'%i,9,True,NAVY)
+            page.paragraph(action,8,width=page.width-34,x=page.x+32,max_lines=3,leading=17)
+            page.y+=9
+        page.audit(extras=[('Ambang skor',str(evaldata.get('ambang_prediksi','tidak tercatat'))),
+                           ('Target precision',fmt(evaldata.get('target_precision_usulan'))),
+                           ('Status data','GOLD TEST' if has_test else 'tanpa GOLD TEST')])
     def close(self):self.p.end()
 
 

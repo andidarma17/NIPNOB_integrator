@@ -1,5 +1,16 @@
 # Pemeriksaan redesain laporan PDF
 
+## Koreksi jarak dan peta QA (23 Oktober 2026)
+
+- Garis pemisah header kini berada di antara judul dan subjudul dengan jarak yang terbaca pada keenam modul. Legenda grafik proporsi atribut Modul 1 tidak lagi berhimpitan dengan judul grafik kolom kosong berikutnya.
+- Peta Modul 2 membedakan kandidat gap (biru, tepi putus-putus) dari geometri invalid/fixed PBB (jingga, arsiran). Lingkaran penunjuk lokasi membantu menemukan poligon kecil; keterangan menyatakan bahwa ukuran lingkaran bukan luas bidang.
+
+## Penyelarasan keenam modul (23 Oktober 2026)
+
+- Halaman pertama Modul 1, 2, 4, 5, dan 6 kini memakai `EditorialPage`: kolom label kiri, kesimpulan dan batasan yang terlihat, tabel bukti ringkas, bar berlabel, serta jejak audit. Modul 3 tetap mengikuti komposisi referensi yang sudah disetujui. Kategori Level, dataset, dan status memakai peran warna berbeda.
+- Contoh PDF Modul 1–5 dirender dari data `NIBNOP_HASIL` yang tersedia. Modul 4 memang tidak memiliki GOLD TEST independen, sehingga contoh menyatakan **BELUM DAPAT DINILAI** dan tidak menampilkan angka evaluasi TEST buatan. Karena belum ada hasil Modul 6 yang disediakan, contoh Modul 6 memakai identitas rekaan dan diberi label **DATA SINTETIS** pada setiap halaman.
+- Halaman pertama keenam contoh diperiksa pada A4. Isi rinci berikutnya tetap dirender oleh generator yang sama; contoh lengkap ada di `output/pdf/laporan_modul{1..5}_contoh_redesain.pdf` dan `output/pdf/laporan_modul6_contoh_sintetis.pdf` pada workspace ini.
+
 ## Iterasi acuan report editorial (23 Oktober 2026)
 
 - Halaman pertama Modul 1, 2, 4, 5, dan 6 kini memakai urutan **Kesimpulan → Batasan interpretasi → Hasil utama/evaluasi → Tindak lanjut → Parameter dan jejak audit**. Modul 3 menambah distribusi kategori, frekuensi alasan Level 2, dan enam contoh kandidat, sesuai struktur contoh pengguna.
