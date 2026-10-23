@@ -25,6 +25,18 @@ def save_layer(layer, folder, base, format_name):
     opts.driverName = driver
     opts.fileEncoding = 'UTF-8'
     opts.layerName = base
+    if driver == 'GPKG':
+        # GeoPackage reserves its FID column for an integer primary key. Keep
+        # a source attribute named "fid" (which may be text or non-unique) as
+        # ordinary data by assigning a different name to the generated key.
+        names = {field.name().lower() for field in layer.fields()}
+        if 'fid' in names:
+            fid_name = '__nibnop_fid'
+            suffix_number = 2
+            while fid_name.lower() in names:
+                fid_name = '__nibnop_fid_%d' % suffix_number
+                suffix_number += 1
+            opts.layerOptions = ['FID=' + fid_name]
     # Keep outputs separate to avoid over-writing previous GeoPackage layer tables.
     result = QgsVectorFileWriter.writeAsVectorFormatV3(
         layer, output, QgsProject.instance().transformContext(), opts)
