@@ -1,0 +1,19 @@
+NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
+
+- Modul 3 dan 3.1: opsi baru "Tahap 2: cari ulang padanan Level 2 dalam buffer dengan
+  skor nama" (bawaan mati; memerlukan kolom nama BPN dan PBB).
+- Tahap 1 (aturan lama) tidak berubah. Tahap 2 hanya memproses rekaman yang tersisa
+  Level 2, kecuali NIB/NOP kosong atau duplikat.
+- Kandidat tahap 2: PBB beririsan / di dalam bidang atau berjarak <= buffer
+  (Modul 3 bawaan 5 m; Modul 3.1 memakai toleransi titik).
+- skor_gabungan = 0,60 nama + 0,25 spasial + 0,15 kesamaan luas tertulis (bobot diatur).
+  Lolos bila skor gabungan >= 80, skor nama >= 60, unggul >= 10 poin dari kandidat ke-2
+  di sisi BPN dan PBB, dan 1:1.
+- Pasangan lolos masuk 01_padanan_level1 dengan metode_padu=RULE_NAMA; kekuatan
+  KUAT (nama cocok) / SEDANG (nama mirip).
+- Kolom baru skor_gabungan pada Level 1 dan Level 2; pasangan_kandidat.csv menambah
+  skor_spasial, skor_gabungan, alasan_tahap2, metode_padu.
+- PDF Modul 3/3.1: ringkasan jumlah Level 1 tahap 1 vs tahap 2, catatan parameter
+  tahap 2, kolom "Tahap" pada tabel kekuatan.
+- Modul 4: pasangan RULE_NAMA tidak dipakai sebagai label silver.
+- Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2.

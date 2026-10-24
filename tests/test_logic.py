@@ -1,7 +1,8 @@
 """Unit tests (run with: python -m unittest discover tests -v)."""
 import unittest
 from nibnop_integrator.logic import (ident,empty,number,dev_percent,similarity,gate_pair,normalize_verified_label,
-                                    name_tokens,name_similarity,name_status,match_strength)
+                                    name_tokens,name_similarity,name_status,match_strength,
+                                    spatial_score,combined_score,select_stage2)
 
 O={'max_dev':50,'min_sim':90,'min_overlap':50}
 
@@ -69,5 +70,44 @@ class NameTests(unittest.TestCase):
         self.assertEqual(name_status(name_similarity('Budi','Ani')),'TIDAK_COCOK')
         self.assertIsNone(name_similarity('','Ani'))
         self.assertEqual(name_status(None),'TIDAK_DINILAI')
+
+def _row(b,p,score,name=95.):
+    return {'record_bpn':b,'record_pbb':p,'skor_gabungan':score,'skor_nama':name}
+
+
+class StageTwoTests(unittest.TestCase):
+    def test_spatial_score(self):
+        self.assertEqual(spatial_score(3.,5.,linked=True),100.)
+        self.assertEqual(spatial_score(0.,5.),100.)
+        self.assertAlmostEqual(spatial_score(2.5,5.),50.)
+        self.assertEqual(spatial_score(7.,5.),0.)
+        self.assertEqual(spatial_score(None,5.),0.)
+
+    def test_combined_score(self):
+        self.assertEqual(combined_score(100,100,100),100.)
+        self.assertAlmostEqual(combined_score(90,50,None),.6*90+.25*50)
+        # weights are normalised, so they need not sum to 1
+        self.assertEqual(combined_score(80,40,0,(2,2,0)),60.)
+        self.assertIsNone(combined_score(None,100,100))
+        self.assertIsNone(combined_score(90,100,100,(0,0,0)))
+
+    def test_select_one_to_one_with_margin(self):
+        rows=[_row(1,1,92),_row(1,2,70),_row(2,3,85)]
+        self.assertEqual(select_stage2(rows),[rows[0],rows[2]])
+        self.assertEqual(rows[1]['alasan_tahap2'],'SKOR_GABUNGAN_KURANG;BUKAN_KANDIDAT_TERBAIK')
+
+    def test_select_rejects_close_runner_up_on_either_side(self):
+        rows=[_row(1,1,90),_row(1,2,85)]
+        self.assertEqual(select_stage2(rows),[])
+        self.assertIn('SELISIH_SKOR_KURANG',rows[0]['alasan_tahap2'])
+        # runner-up on the PBB side counts too
+        rows=[_row(1,1,90),_row(2,1,86)]
+        self.assertEqual(select_stage2(rows),[])
+
+    def test_select_requires_name(self):
+        rows=[_row(1,1,85,name=55.),_row(2,2,None,name=None)]
+        self.assertEqual(select_stage2(rows),[])
+        self.assertIn('SKOR_NAMA_KURANG',rows[0]['alasan_tahap2'])
+        self.assertEqual(rows[1]['alasan_tahap2'],'NAMA_TIDAK_DINILAI')
 
 if __name__=='__main__':unittest.main()

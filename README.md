@@ -1,4 +1,4 @@
-# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.5)
+# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.6)
 
 **Status:** implemented, compiled and unit-tested without QGIS; GUI, I/O and geometry processing require end-to-end validation within installed QGIS. **Do not yet use unattended on production land-tax records.**
 
@@ -31,6 +31,18 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 **Pembaruan 0.9.3 — Evaluasi AI Modul 4:** Modul 4 kini melaporkan seluruh metrik TRAIN / VALIDATION / TEST (GOLD independen), confusion matrix kedua model, kurva ROC, PR, kalibrasi, feature importance, batas bawah Wilson 95% Precision, panduan interpretasi ambang, dan rekomendasi otomatis. Seluruh gambar langsung masuk ke PDF `laporan_modul4.pdf`. Metrik TEST **tidak dibuat** bila GOLD independen tidak tersedia; laporan menulis BELUM DAPAT DINILAI. `rekap_csv.zip` menambahkan `metrik_train_validation_test.csv`, `feature_importance.csv`, `panduan_ambang_metrik.csv`, `penilaian_per_metrik.csv`, dan `rekomendasi_model.csv`. Model dan parameter aturan Modul 1–3 tidak berubah.
 
 **Memperbarui instalasi:** Nonaktifkan plugin lama di QGIS, gunakan **Plugins > Manage and Install Plugins > Install from ZIP** dengan paket v0.9.4, lalu restart QGIS. Jika QGIS tidak mengganti file versi lama, hapus instalasi plugin lama lewat manajer plugin sebelum memasang ulang. Jangan hapus atau timpa folder data hasil kerja operator.
+
+## Pembaruan v0.9.6 - Pemadanan tahap 2 (buffer + skor nama)
+
+Pada Modul 3 dan 3.1, bila kolom nama BPN dan PBB dipilih, centang *"Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama"*:
+
+1. **Tahap 1** — aturan yang sudah ada dijalankan apa adanya, menghasilkan Level 1 dan Level 2.
+2. **Tahap 2** — rekaman Level 2 (kecuali NIB/NOP kosong atau duplikat) dicari ulang kandidatnya dalam **buffer** di sekitar bidang BPN (bawaan **5 m**; Modul 3.1 memakai toleransi titik). Tiap kandidat dinilai:
+   * `skor_nama` (0–100), `skor_spasial` (100 bila beririsan / titik di dalam bidang, turun linear sampai 0 di tepi buffer), dan kesamaan luas tertulis;
+   * `skor_gabungan` = 0,60·nama + 0,25·spasial + 0,15·luas (bobot dapat diubah).
+3. Kandidat menjadi **Level 1** dengan `metode_padu=RULE_NAMA` bila skor gabungan ≥ 80, skor nama ≥ 60, unggul ≥ 10 poin dari kandidat ke-2 di sisi BPN maupun PBB, dan pasangan 1:1. Semua ambang dapat diubah di dialog.
+
+Rekaman yang tetap Level 2 mendapat kolom `skor_gabungan` (kandidat terbaik) untuk prioritas verifikasi studio. Detail per kandidat (`skor_spasial`, `skor_gabungan`, `alasan_tahap2`) ada di `pasangan_kandidat.csv`. Pasangan tahap 2 tidak dipakai sebagai label silver Modul 4. Lihat `nibnop_docs/DOMAIN_RULES.md` §1c.
 
 ## Pembaruan v0.9.5 - Modul 3.1 (PBB titik NOP) dan validasi nama
 

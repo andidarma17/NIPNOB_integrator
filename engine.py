@@ -10,13 +10,14 @@ from qgis.core import (QgsFeature, QgsField, QgsSpatialIndex, QgsVectorLayer,
                        QgsWkbTypes, QgsUnitTypes)
 from .compat import field_type
 from .logic import (empty, ident, number, dev_percent, similarity, gate_pair,
-                    name_similarity, name_status, match_strength)
+                    name_similarity, name_status, match_strength, spatial_score,
+                    combined_score, select_stage2, STAGE2_DEFAULTS)
 
 QA_COLUMNS = {'geom_kosong','geom_invalid','geom_fixed','overlap','bid_tambah',
               'selisih_luas','persen_selisihL','id_kosong','id_duplikat','luas_flag',
               'level','kode_l2','alasan_l2','calon_n','calon_id', 'skor_ai',
               'metode_padu','nop_padanan','skor_nama','valid_nama','kekuatan',
-              'calon_nama'}
+              'calon_nama','skor_gabungan'}
 
 # Two PBB points closer than this (m) are flagged as coincident ("titik ganda").
 POINT_COINCIDENT_TOL = .01
@@ -412,7 +413,8 @@ def determine_levels(b,p,opts):
     inside the BPN parcel (replaces the overlap gate). Every other gate stays.
     Optional names (opts 'bpn_name'/'pbb_name') add ``valid_nama`` and
     ``kekuatan`` to accepted pairs, and fail a pair only with
-    ``opts['require_name']``.
+    ``opts['require_name']``. With names and ``opts['name_stage']`` a second
+    stage (``name_stage``) re-examines the remaining Level 2 records.
     """
     prepare_local(b,opts['bpn_id'],opts['bpn_area'],opts['max_dev'],opts.get('bpn_name'))
     prepare_local(p,opts['pbb_id'],opts['pbb_area'],opts['max_dev'],opts.get('pbb_name'))
@@ -454,6 +456,17 @@ def determine_levels(b,p,opts):
         if r['record_bpn'] in seen_b or r['record_pbb'] in seen_p:
             raise AssertionError('Pasangan tidak unik; cek aturan pemaduan')
         seen_b.add(r['record_bpn']);seen_p.add(r['record_pbb']);clean.append(r)
+    stage2=[]
+    if names_used and opts.get('name_stage'):
+        stage2=name_stage(b,p,pairs,seen_b,seen_p,opts,pmode)
+        for r in stage2:
+            seen_b.add(r['record_bpn']);seen_p.add(r['record_pbb'])
+    best2_b={};best2_p={}
+    for r in pairs:
+        score=r.get('skor_gabungan')
+        if score is None:continue
+        best2_b[r['record_bpn']]=max(score,best2_b.get(r['record_bpn'],score))
+        best2_p[r['record_pbb']]=max(score,best2_p.get(r['record_pbb'],score))
     def name_hint(cands,key):
         return ';'.join(str(v[key]) for v in sorted(cands,key=candidate_rank)
                         if v.get('valid_nama')=='COCOK')
@@ -468,7 +481,8 @@ def determine_levels(b,p,opts):
             level=2,calon_n=counts_b[rb['idx']],
             kode_l2=';'.join(reasons),alasan_l2='; '.join(reasons),
             calon_id=';'.join(str(v['NOP']) for v in sorted(by_b[rb['idx']],key=candidate_rank)[:5]),
-            calon_nama=name_hint(by_b[rb['idx']],'NOP'))
+            calon_nama=name_hint(by_b[rb['idx']],'NOP'),
+            skor_gabungan=best2_b.get(rb['idx']))
         b_level2.append(nr)
     for rp in p:
         if rp['idx'] in seen_p:continue
@@ -478,13 +492,62 @@ def determine_levels(b,p,opts):
             level=2,calon_n=counts_p[rp['idx']],kode_l2=';'.join(reasons),
             alasan_l2='; '.join(reasons),
             calon_id=';'.join(str(v['NIB']) for v in sorted(by_p[rp['idx']],key=candidate_rank)[:5]),
-            calon_nama=name_hint(by_p[rp['idx']],'NIB'))
+            calon_nama=name_hint(by_p[rp['idx']],'NIB'),
+            skor_gabungan=best2_p.get(rp['idx']))
         p_level2.append(nr)
     level1=[]
     for match in clean:
         rb=refb[match['record_bpn']];rp=refp[match['record_pbb']]
         level1.append(level1_record(rb,rp,match,'RULE',names_used=names_used))
-    return level1,b_level2,p_level2,pairs,clean
+    for match in stage2:
+        rb=refb[match['record_bpn']];rp=refp[match['record_pbb']]
+        level1.append(level1_record(rb,rp,match,'RULE_NAMA'))
+    return level1,b_level2,p_level2,pairs,clean+stage2
+
+
+def name_stage(b,p,pairs,seen_b,seen_p,opts,pmode):
+    """Tahap 2: Level 2 records re-examined within a buffer using names.
+
+    Only records left unmatched by stage 1 and free of identity failures
+    (``logic.STAGE2_BLOCKED``) take part. Candidates within ``stage2_buffer`` metres
+    get ``skor_spasial`` and ``skor_gabungan`` (``logic.combined_score``);
+    ``logic.select_stage2`` keeps strict 1:1 winners. Stage-1 rows in ``pairs``
+    are updated in place, new (non-intersecting) candidates are appended.
+    Accepted rows get ``status=LEVEL_1`` and ``metode_padu=RULE_NAMA``.
+    """
+    o=dict(STAGE2_DEFAULTS,**{k:v for k,v in opts.items() if v is not None})
+    buffer=float(o['stage2_buffer'] or 0.)
+    def free(rows,taken):
+        return [r for r in rows if r['idx'] not in taken and r['a']['_id_field_value']
+                and r['a']['_id_count']==1 and not r['geom'].isNull() and not r['geom'].isEmpty()]
+    eb=free(b,seen_b);ep=free(p,seen_p)
+    if not eb or not ep:return []
+    rows=make_candidate_rows(eb,ep,opts['min_irisan'],radius=max(buffer,1e-6),
+                             point_tol=buffer,
+                             name_thresholds=(opts.get('name_match',90.),opts.get('name_partial',60.)))
+    known={r['pair_id']:r for r in pairs}
+    scored=[]
+    weights=(o['w_name'],o['w_spatial'],o['w_area'])
+    for row in rows:
+        linked=_is_strong_near(row,opts['min_irisan'])
+        if not linked and row['jarak_geometri']>buffer:continue
+        target=known.get(row['pair_id'])
+        if target is None:
+            row['status']='LEVEL_2'
+            row['alasan']='TITIK_DI_LUAR_BIDANG' if pmode else 'TIDAK_ADA_IRISAN'
+            row['kekuatan']=''
+            pairs.append(row);target=row
+        spatial=spatial_score(target['jarak_geometri'],buffer,linked)
+        target['skor_spasial']=round(spatial,1)
+        target['skor_gabungan']=combined_score(target['skor_nama'],spatial,
+                                               target['kesamaan_luas_tulis'],weights)
+        scored.append(target)
+    accepted=select_stage2(scored,o['stage2_min'],o['stage2_min_name'],o['stage2_margin'])
+    for r in accepted:
+        r['status']='LEVEL_1';r['metode_padu']='RULE_NAMA';r['alasan']=''
+        # Weaker spatial evidence than stage 1: strength judged as for points.
+        r['kekuatan']=match_strength(r['valid_nama'],True)
+    return accepted
 
 
 def level1_record(rb,rp,match,method,score=None,names_used=True):
@@ -503,7 +566,8 @@ def level1_record(rb,rp,match,method,score=None,names_used=True):
                   'kesamaan_pct':match['kesamaan_luas_tulis'],
                   'skor_nama':match.get('skor_nama'),
                   'valid_nama':match.get('valid_nama'),
-                  'kekuatan':match['kekuatan']})
+                  'kekuatan':match['kekuatan'],
+                  'skor_gabungan':match.get('skor_gabungan')})
     if score is not None:attrs['skor_ai']=score
     attrs.update({('pbb_'+k):v for k,v in rp['a'].items() if not k.startswith('_')})
     return {'idx':rb['idx'],'fid':rb['fid'],'a':attrs,'geom':rb['geom']}

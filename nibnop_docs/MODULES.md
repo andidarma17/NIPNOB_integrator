@@ -36,6 +36,7 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Keluaran | `01_padanan_level1` (BPN + atribut PBB berawalan `pbb_`, `nop_padanan`, `metode_padu=RULE`, `overlap_pct`, `kesamaan_pct`), `02_bpn_level2`, `03_pbb_level2` (`level`, `calon_n`, `kode_l2`, `alasan_l2`, `calon_id`), `manifest_modul3.json`, PDF, ZIP |
 | Catatan | Kesetaraan tepat pada ambang **tidak lolos** (`>` ketat). Hubungan 1:N dihitung dari calon **di atas ambang**, bukan total irisan kecil |
 | Validasi nama (0.9.5) | Kolom nama opsional BPN/PBB → `skor_nama`, `valid_nama`, `kekuatan` (KUAT/SEDANG/LEMAH), `calon_nama`; opsi "Nama TIDAK COCOK → Level 2" (bawaan mati). Ambang nama COCOK 90 %, MIRIP 60 %. PBB berupa titik ditolak → gunakan Modul 3.1 |
+| Tahap 2 (0.9.6) | Opsional, butuh kolom nama: Level 2 dicari ulang dalam **buffer 5 m**; skor gabungan nama/spasial/luas (0,60/0,25/0,15) ≥ 80, nama ≥ 60, unggul ≥ 10 poin, 1:1 → Level 1 `metode_padu=RULE_NAMA`. Lihat `DOMAIN_RULES.md` §1c |
 
 ## Modul 3.1 — Penentuan level pemaduan PBB titik (NOP) (0.9.5)
 
@@ -46,6 +47,7 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Proses | Audit ulang (BPN: fix, overlap, gap; PBB: titik berimpit) → kandidat titik-bidang → gerbang identitas, keunikan 1:1, luas, **titik di dalam bidang** (menggantikan overlap) → validasi nama → kekuatan |
 | Keluaran | `01_padanan_level1` (bidang BPN + atribut PBB, `overlap_pct` kosong), `02_bpn_level2`, `03_pbb_level2` (titik), `manifest_modul3_1.json`, `laporan_modul3_1.pdf`, ZIP (`pasangan_kandidat.csv`, `titik_berimpit_pbb.csv`, …) |
 | Catatan | Deviasi luas PBB = luas tertulis PBB vs luas geometri BPN. Titik di luar bidang hanya calon Level 2 (`TITIK_DI_LUAR_BIDANG`). Bidang tanpa titik `TIDAK_ADA_TITIK`; titik jauh dari semua bidang `TITIK_DI_LUAR_SEMUA_BIDANG`. Padanan titik tanpa nama cocok berkekuatan paling tinggi SEDANG |
+| Tahap 2 (0.9.6) | Sama dengan Modul 3; buffer = toleransi titik (`point_tol`) |
 
 ## Modul 4 — Training AI
 

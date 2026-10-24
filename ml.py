@@ -47,6 +47,8 @@ def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
         existing=csv_rows(silver_csv)
         for s in existing:
             if str(s.get('status','')).upper() not in ('LEVEL_1','LEVEL 1','1'):continue
+            # Tahap 2 pairs rest on names, which are not model features.
+            if str(s.get('metode_padu','')).upper()=='RULE_NAMA':continue
             r=ref.get(s.get('pair_id'))
             if r:
                 silver.append(dict(r,label=1,label_source='SILVER_RULE',sample_weight=.2))

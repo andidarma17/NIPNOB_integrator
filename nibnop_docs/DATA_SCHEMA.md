@@ -16,15 +16,16 @@ Penamaan: bila file sudah ada, layer baru diberi sufiks `__run2`, `__run3`… (t
 
 ## 2. Kolom QA yang ditambahkan (`engine.QA_COLUMNS`)
 
-`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan, skor_nama, valid_nama, kekuatan, calon_nama`
+`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan, skor_nama, valid_nama, kekuatan, calon_nama, skor_gabungan`
 
 v0.9.5: Level 1 menambah `skor_nama`, `valid_nama`, `kekuatan` (`overlap_pct` kosong untuk PBB titik); Level 2 menambah `calon_nama`. Layer PBB titik disimpan sebagai MultiPoint.
+v0.9.6 (tahap 2): Level 1 dan Level 2 menambah `skor_gabungan` (Level 2: skor kandidat tahap 2 terbaik); padanan tahap 2 bermetode `RULE_NAMA`.
 (dibuang saat membaca layer agar QA lama tidak terbawa; `persen_selisihL` bertanda ±, terhadap luas **tertulis**).
 
 ## 3. Skema CSV penting
 
 **`pasangan_kandidat.csv` / `skor_kandidat.csv` / `fitur_kandidat.csv`**
-`pair_id` (`B%06d_P%06d`), `record_bpn`, `record_pbb`, `NIB`, `NOP`, `irisan_m2`, `overlap_bpn_pct`, `overlap_pbb_pct`, `iou`, `area_bpn_geom`, `area_pbb_geom`, + 18 fitur (lihat `DOMAIN_RULES.md` §3), `x_bpn`, `y_bpn`, `mode_geom` (`POLIGON`/`TITIK`), `titik_di_dalam` (1/0; kosong untuk poligon), `skor_nama`, `valid_nama`; M3 tambah `status` (`LEVEL_1`/`LEVEL_2`), `alasan` (`;`), `kekuatan`, `src_bpn_sha`, `src_pbb_sha`; M5 tambah `skor_ai`, `keputusan_ai`.
+`pair_id` (`B%06d_P%06d`), `record_bpn`, `record_pbb`, `NIB`, `NOP`, `irisan_m2`, `overlap_bpn_pct`, `overlap_pbb_pct`, `iou`, `area_bpn_geom`, `area_pbb_geom`, + 18 fitur (lihat `DOMAIN_RULES.md` §3), `x_bpn`, `y_bpn`, `mode_geom` (`POLIGON`/`TITIK`), `titik_di_dalam` (1/0; kosong untuk poligon), `skor_nama`, `valid_nama`; M3 tambah `status` (`LEVEL_1`/`LEVEL_2`), `alasan` (`;`), `kekuatan`, `src_bpn_sha`, `src_pbb_sha`; tahap 2 tambah `skor_spasial`, `skor_gabungan`, `alasan_tahap2`, `metode_padu` (`RULE_NAMA` bila lolos); M5 tambah `skor_ai`, `keputusan_ai`.
 
 **Label operator / GOLD (`verifikasi_studio.csv`, `template_verifikasi_operator.csv`)**
 `pair_id, record_bpn, record_pbb, NIB, NOP, label (1|0|kosong), status_verifikasi (DIVERIFIKASI), sumber_verifikasi, operator, catatan, waktu` (+ opsional `wilayah` untuk pengelompokan split, `jenis_data`).
@@ -57,7 +58,7 @@ Metrik per split: `n, positif, negatif, prevalensi, threshold, tp, tn, fp, fn, c
 
 | Konteks | Nilai |
 |---|---|
-| Level pasangan | `LEVEL_1`, `LEVEL_2`; metode: `RULE`, `AI_VERIFIED` |
+| Level pasangan | `LEVEL_1`, `LEVEL_2`; metode: `RULE`, `RULE_NAMA` (tahap 2), `AI_VERIFIED` |
 | Keputusan AI (M5) | `DITERIMA_LEVEL1`, `REKOMENDASI_STUDIO` |
 | Status model | `NO_MODEL`, `PREVIEW_ONLY`, `GOLD_TESTED_REVIEW_REQUIRED` |
 | Verdict operasional (M4) | `BELUM DAPAT DINILAI`, `BELUM LAYAK`, `PERLU PERBAIKAN / VERIFIKASI TAMBAHAN`, `LAYAK MASUK PENINJAUAN OPERASIONAL` |

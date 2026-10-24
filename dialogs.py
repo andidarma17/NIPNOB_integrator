@@ -21,10 +21,10 @@ LEVEL2_EXTRA=[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
               ('overlap','Int'),('bid_tambah','Int'),('selisih_luas','Double'),
               ('persen_selisihL','Double'),('level','Int'),('calon_n','Int'),
               ('kode_l2','String'),('alasan_l2','String'),('calon_id','String'),
-              ('calon_nama','String')]
+              ('calon_nama','String'),('skor_gabungan','Double')]
 LEVEL1_EXTRA=[('nop_padanan','String'),('level','Int'),('metode_padu','String'),
               ('overlap_pct','Double'),('kesamaan_pct','Double'),('skor_nama','Double'),
-              ('valid_nama','String'),('kekuatan','String')]
+              ('valid_nama','String'),('kekuatan','String'),('skor_gabungan','Double')]
 MODULE_TITLES={1:'01 - Audit Kelengkapan',2:'02 - Kualitas Spasial',
                3:'03 - Penentuan level pemaduan berbasis aturan (PBB poligon)',
                31:'03.1 - Penentuan level pemaduan PBB titik (NOP)',
@@ -48,6 +48,10 @@ def name_summary(accepted,names_used):
         strength=Counter(r.get('kekuatan') for r in accepted)
         out.update({'Kekuatan KUAT':strength.get('KUAT',0),'Kekuatan SEDANG':strength.get('SEDANG',0),
                     'Kekuatan LEMAH':strength.get('LEMAH',0)})
+        stage2=sum(1 for r in accepted if r.get('metode_padu')=='RULE_NAMA')
+        if stage2:
+            out.update({'Level 1 tahap 1 (aturan)':len(accepted)-stage2,
+                        'Level 1 tahap 2 (buffer + nama)':stage2})
     return out
 
 
@@ -58,7 +62,14 @@ def name_notes(options,pmode):
             '(gelar/sapaan dan ejaan lama dinormalisasi).' %
             (options['bpn_name'],options['pbb_name'],options['name_match'],options['name_partial']),
             ('Nama TIDAK COCOK menurunkan pasangan ke Level 2.' if options.get('require_name') else
-             'Nama hanya menentukan kekuatan padanan (KUAT/SEDANG/LEMAH), tidak menggugurkan Level 1.')]
+             'Nama hanya menentukan kekuatan padanan (KUAT/SEDANG/LEMAH), tidak menggugurkan Level 1.')]+(
+            ['Tahap 2: Level 2 (tanpa masalah NIB/NOP kosong/duplikat) dicari ulang dalam buffer %g m; '
+             'skor gabungan = %g·nama + %g·spasial + %g·luas tertulis (dinormalisasi). Lolos menjadi '
+             'Level 1 (metode RULE_NAMA) bila skor gabungan >= %g, skor nama >= %g, unggul >= %g poin '
+             'dari kandidat ke-2 di sisi BPN dan PBB, serta 1:1.' %
+             (options['stage2_buffer'],options['w_name'],options['w_spatial'],options['w_area'],
+              options['stage2_min'],options['stage2_min_name'],options['stage2_margin'])]
+            if options.get('name_stage') else [])
 
 
 class Selector(QWidget):
@@ -186,13 +197,15 @@ class ToolDialog(QDialog):
                             'nama untuk validasi tambahan kekuatan padanan.')
                 info.setWordWrap(True);self.param_form.addRow(info)
             self.add_spin('point_tol','Toleransi titik PBB di luar bidang (m; hanya calon Level 2)'
-                          +(' - bila PBB titik:' if m==5 else ':'),5,0,1000)
+                          +(' - bila PBB titik:' if m==5 else ' / buffer tahap 2:'),5,0,1000)
         if m in (3,31,5):
             self.add_spin('name_match','Nama COCOK bila kesamaan nama ≥ (%):',90,0,100,1)
             self.add_spin('name_partial','Nama MIRIP bila kesamaan nama ≥ (%):',60,0,100,1)
             self.require_name=QCheckBox('Nama TIDAK COCOK menurunkan pasangan ke Level 2 (NAMA_TIDAK_COCOK)')
             self.require_name.setChecked(False)
             self.param_form.addRow('',self.require_name)
+        if m in (3,31):
+            self.setup_name_stage()
         if m==4:
             self.silver=self.filepick('CSV kandidat Modul 3 (silver):')
             self.gold_features=self.filepick('CSV fitur historis terverifikasi (opsional):')
@@ -217,6 +230,28 @@ class ToolDialog(QDialog):
             self.param_form.addRow('',self.promote)
             self.promote.setChecked(False)
             self.param_form.addRow(QLabel('PERHATIAN: file model joblib hanya dari sumber yang dipercaya.'))
+    def setup_name_stage(self):
+        """Tahap 2 (Modul 3/3.1): buffer search + combined score for Level 2."""
+        self.name_stage=QCheckBox('Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama')
+        self.name_stage.setToolTip('Memerlukan kolom nama BPN dan PBB. Pasangan yang lolos menjadi '
+                                   'Level 1 dengan metode_padu=RULE_NAMA.')
+        self.name_stage.setChecked(False)
+        self.param_form.addRow('',self.name_stage)
+        keys=[]
+        if self.modul==3:
+            self.add_spin('stage2_buffer','Buffer tahap 2 di sekitar bidang BPN (m):',5,0,1000);keys.append('stage2_buffer')
+        for key,label,default,maxv in (
+                ('w_name','Bobot skor nama:',.60,1.),('w_spatial','Bobot skor spasial (jarak):',.25,1.),
+                ('w_area','Bobot skor kesamaan luas tertulis:',.15,1.),
+                ('stage2_min','Skor gabungan minimum (0-100):',80,100),
+                ('stage2_min_name','Skor nama minimum tahap 2 (%):',60,100),
+                ('stage2_margin','Selisih minimum dari kandidat ke-2 (poin):',10,100)):
+            self.add_spin(key,label,default,0,maxv,2 if maxv==1. else 1);keys.append(key)
+        def toggle(on):
+            for key in keys:
+                self.param[key].setEnabled(on)
+                self.param_form.labelForField(self.param[key]).setEnabled(on)
+        self.name_stage.toggled.connect(toggle);toggle(False)
     def two_layers(self):
         b,bid,ba=self.bpn.values();p,pid,pa=self.pbb.values()
         if not b or not p or not bid or not pid or not ba or not pa:
@@ -232,14 +267,24 @@ class ToolDialog(QDialog):
                              'atau pilih "(tidak digunakan)" pada keduanya.')
         if self.require_name.isChecked() and not bname:
             raise ValueError('Opsi "Nama TIDAK COCOK menurunkan ke Level 2" memerlukan kolom nama BPN dan PBB.')
-        return {'bpn_id':bid,'pbb_id':pid,'bpn_area':ba,'pbb_area':pa,
+        stage2={}
+        if getattr(self,'name_stage',None) is not None and self.name_stage.isChecked():
+            if not bname:
+                raise ValueError('Tahap 2 (buffer + skor nama) memerlukan kolom nama BPN dan PBB.')
+            if self.val('w_name')+self.val('w_spatial')+self.val('w_area')<=0:
+                raise ValueError('Jumlah bobot tahap 2 harus lebih dari 0.')
+            stage2={'name_stage':True,
+                    'stage2_buffer':self.val('stage2_buffer' if 'stage2_buffer' in self.param else 'point_tol')}
+            stage2.update({k:self.val(k) for k in ('w_name','w_spatial','w_area','stage2_min',
+                                                   'stage2_min_name','stage2_margin')})
+        return dict(stage2,**{'bpn_id':bid,'pbb_id':pid,'bpn_area':ba,'pbb_area':pa,
                 'min_overlap':self.val('overlap') if 'overlap' in self.param else 50.,
                 'min_sim':self.val('sim'),
                 'max_dev':self.val('dev'),'min_irisan':self.val('min_irisan'),
                 'bpn_name':bname,'pbb_name':pname,
                 'point_tol':self.val('point_tol') if 'point_tol' in self.param else 0.,
                 'name_match':self.val('name_match'),'name_partial':self.val('name_partial'),
-                'require_name':self.require_name.isChecked()}
+                'require_name':self.require_name.isChecked()})
     def report_metadata(self,b,p,bid,pid,ba,pa,thresholds=''):
         fp_b=layer_fingerprint(b);fp_p=layer_fingerprint(p)
         return {'layer_bpn':b.name(),'layer_pbb':p.name(),
@@ -393,7 +438,8 @@ class ToolDialog(QDialog):
                        'alasan_level2.csv':[{'record':row['idx'],
                            'id':row['a'].get(options['bpn_id']),
                            'alasan':row['a'].get('kode_l2'),
-                           'calon_nama':row['a'].get('calon_nama')} for row in level2b]}
+                           'calon_nama':row['a'].get('calon_nama'),
+                           'skor_gabungan':row['a'].get('skor_gabungan')} for row in level2b]}
         archive=zip_csv(out,report_tables)
         common_notes=['Input wajib dari layer terbaru hasil perbaikan operator.',
                       'Seluruh pemeriksaan kualitas dihitung ulang pada input baru.',
@@ -409,6 +455,8 @@ class ToolDialog(QDialog):
             notes=common_notes[:2]+['Seleksi overlap terhadap luas geometri BPN menggunakan ambang %.1f%%.' % options['min_overlap']]+common_notes[2:]
             thresholds='Overlap >%g%%; kesamaan luas >%g%%'%(options['min_overlap'],options['min_sim'])
         notes+=name_notes(options,point)
+        if options.get('name_stage'):
+            thresholds+='; tahap 2 buffer %g m, skor gabungan >=%g'%(options['stage2_buffer'],options['stage2_min'])
         metadata=self.report_metadata(b,p,options['bpn_id'],options['pbb_id'],
                                       options['bpn_area'],options['pbb_area'],thresholds)
         if point:

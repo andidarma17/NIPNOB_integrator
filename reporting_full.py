@@ -1054,10 +1054,12 @@ def _name_strength_pages(r,pairs,number,names_used,point):
         number+=1
     if names_used and accepted:
         r.figpage(number,'Kekuatan padanan Level 1',
-                  ('KUAT: titik di dalam bidang dan nama cocok; SEDANG: nama mirip atau tidak dinilai; '
-                   'LEMAH: nama bertentangan.') if point else
-                  ('KUAT: gerbang spasial dan luas lolos, nama tidak bertentangan; '
-                   'SEDANG: nama tidak cocok.'))
+                  (('KUAT: titik di dalam bidang dan nama cocok; SEDANG: nama mirip atau tidak dinilai; '
+                    'LEMAH: nama bertentangan.') if point else
+                   ('KUAT: gerbang spasial dan luas lolos, nama tidak bertentangan; '
+                    'SEDANG: nama tidak cocok.'))+
+                  (' Padanan tahap 2 (buffer + skor nama): KUAT bila nama cocok, SEDANG bila mirip.'
+                   if any(p.get('metode_padu')=='RULE_NAMA' for p in accepted) else ''))
         r.bar(['KUAT','SEDANG','LEMAH'],[('Level 1',[sum(1 for p in accepted if p.get('kekuatan')==k)
                                                     for k in ('KUAT','SEDANG','LEMAH')])])
         number+=1
@@ -1069,12 +1071,13 @@ def _strength_table(r,pairs,point):
     if not accepted:return
     order={'LEMAH':0,'SEDANG':1,'KUAT':2}
     r.sub('Pasangan Level 1 menurut kekuatan (terlemah lebih dulu)')
-    r.table(['NIB','NOP','Kes. luas %','Nama','Kekuatan'],
+    r.table(['NIB','NOP','Kes. luas %','Nama','Kekuatan','Tahap'],
             [(v.get('NIB',''),v.get('NOP',''),nice(v.get('kesamaan_luas_tulis')),
-              str(v.get('valid_nama') or '').replace('_',' ').capitalize(),v.get('kekuatan',''))
+              str(v.get('valid_nama') or '').replace('_',' ').capitalize(),v.get('kekuatan',''),
+              '2' if v.get('metode_padu')=='RULE_NAMA' else '1')
              for v in sorted(accepted,key=lambda x:(order.get(x.get('kekuatan'),3),
                                                      finite(x.get('skor_nama')) or 0))],
-            [r.cw*.24,r.cw*.30,r.cw*.14,r.cw*.17,r.cw*.15],limit=25)
+            [r.cw*.22,r.cw*.28,r.cw*.13,r.cw*.16,r.cw*.13,r.cw*.08],limit=25)
 
 
 def report3(folder,lev1,lev2b,lev2p,pairs,stats,notes,logs,bpn_all=None,pbb_all=None,gaps=None,crs=None,metadata=None,overlap_threshold=50,similarity_threshold=90,names_used=False):

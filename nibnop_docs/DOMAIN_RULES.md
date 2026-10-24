@@ -37,6 +37,19 @@ Validasi nama (opsional, `logic.name_similarity` / `name_status`): `valid_nama` 
 
 Pengisian fitur untuk kandidat titik: `overlap_bpn_pct = overlap_pbb_pct = 100` (di dalam) atau `0`; `iou = 0`; `kesamaan_luas_geom` = luas tertulis PBB vs luas geometri BPN; `deviasi_luas_pbb` = luas tertulis PBB vs luas geometri BPN; `jarak_centroid` = centroid BPN → titik; `jarak_geometri` = jarak titik ke bidang (0 bila di dalam); `kesamaan_bentuk` kosong (diimputasi). Model mencatat `mode_geometri_pbb` (`POLIGON`/`TITIK`).
 
+### 1c. Tahap 2 — buffer + skor gabungan nama (v0.9.6, Modul 3 & 3.1)
+
+Opsional (`opts['name_stage']`, checkbox *"Tahap 2: cari ulang padanan Level 2…"*), hanya bila kolom nama BPN dan PBB dipilih. Dijalankan **setelah** tahap 1 (aturan §1/§1b) di `engine.name_stage`; hasil tahap 1 tidak diubah.
+
+1. Peserta: rekaman BPN/PBB yang **belum** Level 1 di tahap 1, dengan NIB/NOP terisi dan unik (`logic.STAGE2_BLOCKED`: `NIB_KOSONG`, `NOP_KOSONG`, `NIB_DUPLIKAT`, `NOP_DUPLIKAT` tidak pernah diselamatkan nama).
+2. Kandidat: PBB yang beririsan/berada di dalam bidang BPN atau berjarak ≤ `stage2_buffer` (Modul 3 bawaan 5 m; Modul 3.1 memakai `point_tol`). Kandidat baru (tanpa irisan) ditambahkan ke `pasangan_kandidat.csv` dengan alasan `TIDAK_ADA_IRISAN` / `TITIK_DI_LUAR_BIDANG`.
+3. Skor (`logic.spatial_score`, `logic.combined_score`):
+   * `skor_spasial` = 100 bila beririsan / titik di dalam bidang, selain itu `100·(1 − jarak/buffer)`;
+   * `skor_gabungan` = (`w_name`·`skor_nama` + `w_spatial`·`skor_spasial` + `w_area`·`kesamaan_luas_tulis`) / Σbobot; bawaan 0,60 / 0,25 / 0,15. Luas tak terbaca → 0. Nama tak dinilai → tanpa skor (tidak bisa lolos).
+4. Lolos (`logic.select_stage2`) bila **semua**: `skor_gabungan ≥ stage2_min` (80), `skor_nama ≥ stage2_min_name` (60), kandidat terbaik bagi BPN **dan** PBB-nya, unggul ≥ `stage2_margin` (10 poin) dari kandidat ke-2 di kedua sisi. Alasan gagal di `alasan_tahap2`: `NAMA_TIDAK_DINILAI`, `SKOR_GABUNGAN_KURANG`, `SKOR_NAMA_KURANG`, `BUKAN_KANDIDAT_TERBAIK`, `SELISIH_SKOR_KURANG`.
+5. Pasangan lolos → Level 1 dengan `metode_padu=RULE_NAMA`, `kekuatan` dinilai seperti titik (COCOK→KUAT, MIRIP→SEDANG). Rekaman Level 2 tersisa mendapat `skor_gabungan` kandidat terbaiknya sebagai prioritas studio.
+6. Pasangan `RULE_NAMA` **tidak** dipakai sebagai label SILVER Modul 4 (nama bukan fitur model). Modul 5 tidak menjalankan tahap 2.
+
 **Level 2** = butuh verifikasi studio. *Bukan* pasangan salah dan *bukan* label negatif.
 
 ## 2. Label untuk AI
