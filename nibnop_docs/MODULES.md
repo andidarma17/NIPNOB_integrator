@@ -20,18 +20,19 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 
 | | |
 |---|---|
-| Parameter | Minimum luas overlap 0,01 m²; minimum gap 1 m²; centang delineasi gap BPN |
-| Proses | Deteksi geometri kosong/invalid; `makeValid` (hanya poligon); overlap internal (irisan > ambang); **gap = lubang tertutup** pada gabungan BPN (maks 2 500; lebih dari itu → error); hitung `selisih_luas` & `persen_selisihL` (geometri vs tertulis) |
+| Parameter | Minimum luas overlap 0,01 m²; minimum luas gap layak periksa 1 m²; ambang **peringatan** jumlah gap 2 500 (bukan batas); centang delineasi gap BPN |
+| Proses | Deteksi geometri kosong/invalid; `makeValid` (hanya poligon); overlap internal (irisan > ambang); **gap = lubang tertutup** pada gabungan BPN, disimpan sebagai layer kandidat tersendiri (`status_periksa` `LAYAK_PERIKSA` / `DI_BAWAH_MINIMUM`); jumlah gap layak > ambang hanya memberi peringatan; hitung `selisih_luas` & `persen_selisihL` (geometri vs tertulis). Progres + tombol **Batal**: batal saat ekstraksi gap → gap berhenti, status `TIDAK_LENGKAP`, modul lanjut; batal di tahap lain → tidak ada keluaran |
 | Kolom ditambahkan | `geom_kosong`, `geom_invalid`, `geom_fixed`, `overlap`, `bid_tambah`, `selisih_luas`, `persen_selisihL`, `gap_id` |
-| Keluaran | `bpn_kualitas_spasial`, `pbb_kualitas_spasial`, PDF, ZIP (`*_overlap.csv`, `*_gap_tertutup.csv`) |
-| Catatan | Gap `bid_tambah=1`, tanpa NIB, **bukan otomatis legal**. Overlap ditandai, tidak dihapus. Setelah ini operator memperbaiki manual lalu menyimpan layer **baru** untuk Modul 3 |
+| Keluaran | `bpn_kualitas_spasial`, `pbb_kualitas_spasial`, `bpn_kandidat_gap` (0.9.6), PDF, ZIP (`*_overlap.csv`, `*_gap_tertutup.csv`) |
+| Catatan | Sejak 0.9.6 gap **tidak** lagi ditambahkan ke `bpn_kualitas_spasial`; kandidat gap tanpa NIB, **bukan otomatis legal**. Laporan memisahkan gap terdeteksi / memenuhi luas minimum / diproses / status kelengkapan. Overlap ditandai, tidak dihapus. Setelah ini operator memperbaiki manual lalu menyimpan layer **baru** untuk Modul 3 |
 
 ## Modul 3 — Penentuan level pemaduan berbasis aturan
 
 | | |
 |---|---|
 | Input | **Dua layer hasil koreksi operator** (bukan otomatis dari Modul 2) |
-| Parameter | Irisan > **50 %** luas BPN; kesamaan luas tertulis > **90 %**; deviasi luas-geometri maks **50 %**; minimum irisan 0,01 m²; minimum gap 1 m² |
+| Parameter | Irisan > **50 %** luas BPN; kesamaan luas tertulis > **90 %**; deviasi luas-geometri maks **50 %**; minimum irisan 0,01 m²; opsi kandidat gap (bawaan mati) dengan minimum gap 1 m² dan ambang peringatan 2 500 |
+| Gap (0.9.6) | Pemaduan selalu memakai bidang BPN **sumber**. Bila opsi "Sertakan kandidat gap" dicentang: layer `04_kandidat_gap` + PBB Level 2 di atas gap diberi kode `PBB_DI_ATAS_GAP` dan `calon_gap`; gap **tidak** ikut keunikan 1:1. Modul 5 tidak memeriksa gap |
 | Proses | Audit spasial ulang → kandidat (irisan > min) → `gate_pair` → Level 1 hanya bila **semua** gerbang lolos dan 1:1; sisanya Level 2 dengan kode alasan |
 | Keluaran | `01_padanan_level1` (BPN + atribut PBB berawalan `pbb_`, `nop_padanan`, `metode_padu=RULE`, `overlap_pct`, `kesamaan_pct`), `02_bpn_level2`, `03_pbb_level2` (`level`, `calon_n`, `kode_l2`, `alasan_l2`, `calon_id`), `manifest_modul3.json`, PDF, ZIP |
 | Catatan | Kesetaraan tepat pada ambang **tidak lolos** (`>` ketat). Hubungan 1:N dihitung dari calon **di atas ambang**, bukan total irisan kecil |
@@ -43,8 +44,8 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | | |
 |---|---|
 | Input | Layer BPN poligon + layer PBB **titik** (Point/MultiPoint) hasil koreksi operator; kolom nama opsional |
-| Parameter | Kesamaan luas tertulis > **90 %**; deviasi luas maks **50 %**; toleransi titik di luar bidang **5 m**; minimum overlap internal BPN 0,01 m²; minimum gap 1 m²; nama COCOK 90 % / MIRIP 60 %; opsi "Nama TIDAK COCOK → Level 2" |
-| Proses | Audit ulang (BPN: fix, overlap, gap; PBB: titik berimpit) → kandidat titik-bidang → gerbang identitas, keunikan 1:1, luas, **titik di dalam bidang** (menggantikan overlap) → validasi nama → kekuatan |
+| Parameter | Kesamaan luas tertulis > **90 %**; deviasi luas maks **50 %**; toleransi titik di luar bidang **5 m**; minimum overlap internal BPN 0,01 m²; opsi kandidat gap seperti Modul 3; nama COCOK 90 % / MIRIP 60 %; opsi "Nama TIDAK COCOK → Level 2" |
+| Proses | Audit ulang (BPN: fix, overlap, gap opsional; PBB: titik berimpit) → kandidat titik-bidang → gerbang identitas, keunikan 1:1, luas, **titik di dalam bidang** (menggantikan overlap) → validasi nama → kekuatan |
 | Keluaran | `01_padanan_level1` (bidang BPN + atribut PBB, `overlap_pct` kosong), `02_bpn_level2`, `03_pbb_level2` (titik), `manifest_modul3_1.json`, `laporan_modul3_1.pdf`, ZIP (`pasangan_kandidat.csv`, `titik_berimpit_pbb.csv`, …) |
 | Catatan | Deviasi luas PBB = luas tertulis PBB vs luas geometri BPN. Titik di luar bidang hanya calon Level 2 (`TITIK_DI_LUAR_BIDANG`). Bidang tanpa titik `TIDAK_ADA_TITIK`; titik jauh dari semua bidang `TITIK_DI_LUAR_SEMUA_BIDANG`. Padanan titik tanpa nama cocok berkekuatan paling tinggi SEDANG |
 | Tahap 2 (0.9.6) | Sama dengan Modul 3; buffer = toleransi titik (`point_tol`) |

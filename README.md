@@ -44,6 +44,14 @@ Pada Modul 3, 3.1 dan 5, bila kolom nama BPN dan PBB dipilih, centang *"Tahap 2:
 
 Rekaman yang tetap Level 2 mendapat kolom `skor_gabungan` (kandidat terbaik) untuk prioritas verifikasi studio. Detail per kandidat (`skor_spasial`, `skor_gabungan`, `alasan_tahap2`) ada di `pasangan_kandidat.csv`. Lihat `nibnop_docs/DOMAIN_RULES.md` §1c.
 
+**Gap tertutup BPN (Modul 2, 3, 3.1):**
+
+* Jumlah gap tidak lagi menghentikan proses: melebihi *ambang peringatan* (bawaan 2 500 gap ≥ luas minimum) hanya memunculkan peringatan di log dan PDF.
+* Gap disimpan sebagai layer kandidat tersendiri (Modul 2: `bpn_kandidat_gap`; Modul 3/3.1: `04_kandidat_gap`) dengan `luas_m2` dan `status_periksa` (`LAYAK_PERIKSA` / `DI_BAWAH_MINIMUM`); gap tidak lagi ditambahkan ke layer BPN.
+* Modul 3/3.1 memadukan **bidang BPN sumber**. Centang *"Sertakan kandidat gap BPN sebagai petunjuk"* untuk menyimpan layer gap dan menandai PBB Level 2 di atas gap (`PBB_DI_ATAS_GAP`, `calon_gap`); gap tidak ikut keunikan 1:1, jadi tidak memicu `MULTI_NIB`.
+* Laporan memisahkan: gap terdeteksi, memenuhi luas minimum, diproses, dan status pemeriksaan (`LENGKAP` / `TIDAK LENGKAP`).
+* Jendela progres dengan tombol **Batal**. Batal saat tahap gap menghentikan pemeriksaan gap (status TIDAK LENGKAP) dan modul tetap selesai; batal di tahap lain menghentikan modul tanpa menulis keluaran. Penggabungan poligon untuk mencari gap adalah satu langkah yang tidak dapat disela; Batal berlaku sesudahnya.
+
 **Nama di Modul 4 dan 5:**
 
 * **Modul 4** — kolom nama BPN/PBB opsional. Bila dipilih, model dilatih dengan fitur nama (`skor_nama`, `nama_tidak_dinilai`; versi fitur `QGIS_PLUGIN_V2`, 20 fitur). Centang *"Sertakan padanan tahap 2 (RULE_NAMA) dari CSV Modul 3 sebagai silver"* untuk memakai padanan tahap 2 sebagai label silver dengan bobot sendiri (bawaan 0,1; silver aturan 0,2).
@@ -127,7 +135,7 @@ Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligo
 ## Batasan dan QA yang perlu dilakukan
 
 1. Semua luas dihitung dari CRS proyeksi **meter**; periksa kecocokan datum/zone EPSG. Selisih luas tertulis memakai nilai absolut, sedangkan kolom `persen_selisihL` bertanda (+/-) terhadap **luas tertulis**.
-2. Gap hanya lubang tertutup dalam gabungan poligon BPN, bukan area luar. Bidang gap baru `bid_tambah=1` tanpa NIB dan **tidak** otomatis dianggap legal.
+2. Gap hanya lubang tertutup dalam gabungan poligon BPN, bukan area luar. Sejak 0.9.6 gap disimpan di layer kandidat tersendiri (`bpn_kandidat_gap` / `04_kandidat_gap`) tanpa NIB dan **tidak** otomatis dianggap legal; pemaduan Modul 3 memakai bidang BPN sumber.
 3. Overlap antar-bidang sumber ditandai, **tidak** dihapus sepihak. Luas iris > ambang minimum dianggap overlap. Ambang 50% untuk pasangan dihitung dari **luas BPN**. `50.0%` tepat tidak lolos bila kriteria `>50%`.
 4. Interpretasi hubungan satu-ke-banyak menggunakan jumlah **calon di atas ambang**, bukan total irisan kecil. Kedua belah pihak harus tepat satu calon.
 5. Model AI merupakan alat bantu, **bukan bukti hukum**. Harus diuji dengan sampel pasangan nyata independen untuk menaksir false match.

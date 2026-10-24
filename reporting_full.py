@@ -74,7 +74,8 @@ REASON_LABELS={'TIDAK_ADA_IRISAN':'Tidak ada bidang beririsan',
                'TITIK_DI_LUAR_BIDANG':'Titik NOP di luar bidang',
                'TIDAK_ADA_TITIK':'Tidak ada titik NOP di bidang',
                'TITIK_DI_LUAR_SEMUA_BIDANG':'Titik di luar semua bidang',
-               'NAMA_TIDAK_COCOK':'Nama tidak cocok'}
+               'NAMA_TIDAK_COCOK':'Nama tidak cocok',
+               'PBB_DI_ATAS_GAP':'PBB di atas kandidat gap BPN'}
 NAME_STATES=[('COCOK','Cocok'),('MIRIP','Mirip'),('TIDAK_COCOK','Tidak cocok'),
              ('TIDAK_DINILAI','Tidak dinilai')]
 
@@ -832,8 +833,9 @@ def _brief2(report,b_rows,p_rows,stats,overlap_b,overlap_p,gaps,actions):
     scale=max(5,math.ceil(max(rate_b,rate_p)/5)*5)
     page.meter([('BPN',rate_b,nb,BPN,_percent(ob,nb)),
                 ('PBB',rate_p,np,PBB,_percent(op,np))],scale)
-    page.label(page.x,page.y,'%s area gap diperiksa; %s ditambahkan · skala 0–%g %%.'%
-               (count_text(len(gaps)),count_text(stats.get('bpn_gap_baru',0)+stats.get('pbb_gap_baru',0)),scale),8,color=MUTED)
+    page.label(page.x,page.y,'%s gap terdeteksi; %s memenuhi luas minimum · skala 0–%g %%.'%
+               (count_text(stats.get('Gap terdeteksi',len(gaps))),
+                count_text(stats.get('bpn_gap_baru',0)+stats.get('pbb_gap_baru',0)),scale),8,color=MUTED)
     page.y+=18
     page.actions(actions,maximum=1)
     page.audit(report.metadata,report.crs)
@@ -972,8 +974,13 @@ def report1(folder, b_info,p_info, stats, tables, min_area,max_area,crs=None,met
     return rep.close()
 
 
-def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,metadata=None):
+def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,metadata=None,
+            gap_rows=None,gap_summary=None):
+    """``gaps``: gap CSV rows; ``gap_rows``: candidate gap records (layer bpn_kandidat_gap)."""
     r=Report(folder,2,'Pemeriksaan dan perbaikan kualitas spasial',crs,metadata)
+    gap_rows=gap_rows or []
+    eligible=[g for g in gap_rows if g['a'].get('status_periksa')=='LAYAK_PERIKSA'
+              and not g['geom'].isNull() and not g['geom'].isEmpty()]
     overlap_count=stats.get('bpn_overlap',0)+stats.get('pbb_overlap',0)
     gap_count=stats.get('bpn_gap_baru',0)+stats.get('pbb_gap_baru',0)
     invalid_count=stats.get('bpn_geom_invalid',0)+stats.get('pbb_geom_invalid',0)
@@ -987,21 +994,24 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
         (count_text(invalid_count),count_text(empty_geom_count))))
     if overlap_count:actions.append(('Telaah overlap internal',
         '%s record ditandai overlap. Bandingkan irisan terbesar dengan peta dan dokumen resmi.'%count_text(overlap_count)))
+    if gap_summary and gap_summary.get('status')=='TIDAK_LENGKAP':actions.append(('Lengkapi pemeriksaan gap',
+        'Pemeriksaan gap dibatalkan: %s dari %s gap diproses. Jalankan ulang bila daftar gap lengkap diperlukan.'%
+        (count_text(gap_summary['diproses']),count_text(gap_summary['terdeteksi']))))
     if gap_count:actions.append(('Verifikasi kandidat gap',
-        '%s poligon gap ditambahkan sebagai kandidat; belum menjadi bidang ber-NIB.'%count_text(gap_count)))
+        '%s gap memenuhi luas minimum (layer bpn_kandidat_gap); belum menjadi bidang ber-NIB.'%count_text(gap_count)))
     if not actions:actions.append(('Lanjutkan ke pemaduan berbasis aturan',
         'Indikator spasial yang diperiksa tidak menandai kasus pada keluaran ini.'))
     _brief2(r,b_rows,p_rows,stats,overlap_b,overlap_p,gaps,actions)
-    cats=['Geometri kosong','Geometri invalid','Geometri diperbaiki','Bidang overlap','Gap ditambahkan']
+    cats=['Geometri kosong','Geometri invalid','Geometri diperbaiki','Bidang overlap','Gap layak periksa']
     get=lambda tag:[stats.get(tag+'_'+k,0) for k in ['geom_kosong','geom_invalid','geom_fixed','overlap','gap_baru']]
     if any(get('bpn')+get('pbb')):
         r.figpage(1,'Indikator kualitas spasial','Perbandingan jumlah kasus BPN dan PBB.')
         r.bar(cats,[('BPN',get('bpn')),('PBB',get('pbb'))])
     if any(not row['geom'].isNull() and not row['geom'].isEmpty() for row in b_rows):
         r.start('Kualitas spasial BPN')
-        r.map([(b_rows,NO_PAIR,lambda x:not x['a'].get('overlap') and not x['a'].get('bid_tambah'),'Bidang lainnya'),
+        r.map([(b_rows,NO_PAIR,lambda x:not x['a'].get('overlap'),'Bidang lainnya'),
                (b_rows,OVERLAP,lambda x:bool(x['a'].get('overlap')),'Overlap'),
-               (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Gap baru')], 'Distribusi bidang terindikasi bermasalah')
+               (eligible,GAP,None,'Kandidat gap')], 'Distribusi bidang terindikasi bermasalah')
     if any(not row['geom'].isNull() and not row['geom'].isEmpty() for row in p_rows):
         r.start('Kualitas spasial PBB')
         r.map([(p_rows,NO_PAIR,lambda x:not x['a'].get('overlap'),'Bidang lainnya'),
@@ -1011,15 +1021,15 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
         r.map([(p_rows,NO_PAIR,lambda z:not bool(z['a'].get('geom_invalid')),'PBB lainnya'),
                (p_rows,INVALID,lambda z:bool(z['a'].get('geom_invalid')),'Invalid awal / fixed')],
               'Poligon PBB yang teridentifikasi invalid sebelum perbaikan')
-    newg=[x for x in b_rows if x['a'].get('bid_tambah') and not x['geom'].isNull() and not x['geom'].isEmpty()]
+    newg=eligible
     if newg:
         biggest=max(newg,key=lambda z:z['geom'].area())['geom'].boundingBox()
         margin=max(biggest.width(),biggest.height())*9
         from qgis.core import QgsRectangle
         focus=QgsRectangle(biggest.xMinimum()-margin,biggest.yMinimum()-margin,biggest.xMaximum()+margin,biggest.yMaximum()+margin)
         r.start('Lokasi kandidat gap BPN')
-        r.map([(b_rows,NO_PAIR,lambda x:not bool(x['a'].get('bid_tambah')),'Bidang sekitar'),
-               (b_rows,GAP,lambda x:bool(x['a'].get('bid_tambah')),'Kandidat gap')],
+        r.map([(b_rows,NO_PAIR,None,'Bidang sekitar'),
+               (eligible,GAP,None,'Kandidat gap')],
                'Perbesaran lokasi gap terpilih',focus=focus)
         r.text('Kandidat gap dengan luas terbesar: %.2f m². Posisi hanya indikatif; periksa detail topologi di QGIS.'%max(g['geom'].area() for g in newg),9)
     else:
@@ -1033,8 +1043,20 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
     r.table(['Record A','Record B','Luas irisan (m²)'],[
         (z.get('record_a'),z.get('record_b'),z.get('luas_irisan_m2'))
         for z in sorted(overlap_p,key=lambda v:-float(v.get('luas_irisan_m2') or 0))[:12]])
-    r.sub('Gap tertutup yang terdeteksi')
-    r.table(['ID','Luas (m²)','Ditambah'],[(z.get('gap_id'),z.get('luas_m2'),z.get('ditambahkan'))
+    r.sub('Kelengkapan pemeriksaan gap')
+    if gap_summary:
+        r.table(['Ukuran','Jumlah'],
+                [('Gap terdeteksi',count_text(gap_summary['terdeteksi'])),
+                 ('Memenuhi luas minimum',count_text(gap_summary['layak'])),
+                 ('Diproses',count_text(gap_summary['diproses'])),
+                 ('Status pemeriksaan',gap_summary['status'].replace('_',' '))],
+                [r.cw*.66,r.cw*.34])
+        for warning in gap_summary['peringatan']:r.text(warning,9,color=MUTED)
+    else:
+        r.text('Pemeriksaan gap tidak dijalankan.',9)
+    r.sub('Gap tertutup terbesar')
+    r.table(['ID','Luas (m²)','Status'],[(z.get('gap_id'),z.get('luas_m2'),
+             'Layak periksa' if z.get('status_periksa')=='LAYAK_PERIKSA' else 'Di bawah minimum')
             for z in sorted(gaps,key=lambda v:-float(v.get('luas_m2') or 0))[:18]])
     r.footer_recommendations(actions[:4],
         ['rekap_csv.zip: daftar pasangan overlap dan seluruh gap tertutup.', 'Layer QA BPN/PBB dapat dibuka kembali di QGIS.'])

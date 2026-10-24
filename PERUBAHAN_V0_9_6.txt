@@ -22,5 +22,19 @@ NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
   tetap dapat dipakai di Modul 5; model V2 menolak data tanpa kolom nama.
 - Modul 4: opsi "Sertakan padanan tahap 2 (RULE_NAMA) sebagai silver" (bawaan mati),
   label_source SILVER_RULE_NAMA dengan bobot bawaan 0,1.
+- Gap tertutup BPN: jumlah gap tidak lagi menghentikan proses ("Terlalu banyak celah
+  tertutup"); ambang 2.500 menjadi ambang peringatan dan hanya menghitung gap >= luas
+  minimum (dulu serpihan kecil ikut dihitung).
+- Gap disimpan sebagai layer kandidat tersendiri (Modul 2: bpn_kandidat_gap; Modul
+  3/3.1: 04_kandidat_gap) dengan luas_m2 dan status_periksa (LAYAK_PERIKSA /
+  DI_BAWAH_MINIMUM). Gap tidak lagi ditambahkan ke layer BPN.
+- Modul 3/3.1/5 memadukan bidang BPN sumber. Dulu gap otomatis masuk sebagai BPN tanpa
+  NIB sehingga menambah Level 2 NIB_KOSONG dan dapat memicu MULTI_NIB pada padanan sah.
+  Opsi baru Modul 3/3.1 "Sertakan kandidat gap BPN sebagai petunjuk" (bawaan mati):
+  PBB Level 2 di atas gap diberi kode PBB_DI_ATAS_GAP dan calon_gap.
+- Laporan Modul 2/3/3.1: gap terdeteksi, memenuhi luas minimum, diproses, dan status
+  pemeriksaan (LENGKAP / TIDAK LENGKAP).
+- Jendela progres dengan tombol Batal pada semua modul. Batal saat tahap gap: gap
+  berhenti (TIDAK LENGKAP), modul lanjut. Batal di tahap lain: tanpa keluaran.
 - Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2, versi fitur nama,
-  silver RULE_NAMA.
+  silver RULE_NAMA, gap tanpa batas jumlah + batal sebagian + petunjuk PBB di atas gap.

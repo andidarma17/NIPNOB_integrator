@@ -5,9 +5,9 @@
 | Modul | Layer spasial | File lain |
 |---|---|---|
 | 1 | `bpn_audit_atribut`, `pbb_audit_atribut` | `laporan_modul1.pdf`, `rekap_csv.zip` |
-| 2 | `bpn_kualitas_spasial`, `pbb_kualitas_spasial` | `laporan_modul2.pdf`, `rekap_csv.zip` |
-| 3 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` | `laporan_modul3.pdf`, `rekap_csv.zip`, `manifest_modul3.json` |
-| 3.1 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` (titik) | `laporan_modul3_1.pdf`, `rekap_csv.zip`, `manifest_modul3_1.json` |
+| 2 | `bpn_kualitas_spasial`, `pbb_kualitas_spasial`, `bpn_kandidat_gap` | `laporan_modul2.pdf`, `rekap_csv.zip` |
+| 3 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2`, opsional `04_kandidat_gap` | `laporan_modul3.pdf`, `rekap_csv.zip`, `manifest_modul3.json` |
+| 3.1 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` (titik), opsional `04_kandidat_gap` | `laporan_modul3_1.pdf`, `rekap_csv.zip`, `manifest_modul3_1.json` |
 | 4 | — | `model_terpilih.joblib`, `metadata_model.json`, `evaluasi_testing_ai.json`, `laporan_modul4.pdf`, `rekap_csv.zip` |
 | 5 | `01_padanan_level1`, `02_bpn_level2`, `03_pbb_level2` | `laporan_modul5.pdf`, `rekap_csv.zip` |
 | 6 | — | `verifikasi_studio.csv`, `laporan_modul6.pdf`, `rekap_verifikasi.zip` |
@@ -16,7 +16,7 @@ Penamaan: bila file sudah ada, layer baru diberi sufiks `__run2`, `__run3`… (t
 
 ## 2. Kolom QA yang ditambahkan (`engine.QA_COLUMNS`)
 
-`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan, skor_nama, valid_nama, kekuatan, calon_nama, skor_gabungan`
+`geom_kosong, geom_invalid, geom_fixed, overlap, bid_tambah, selisih_luas, persen_selisihL, id_kosong, id_duplikat, luas_flag, level, kode_l2, alasan_l2, calon_n, calon_id, skor_ai, metode_padu, nop_padanan, skor_nama, valid_nama, kekuatan, calon_nama, skor_gabungan, calon_gap`
 
 v0.9.5: Level 1 menambah `skor_nama`, `valid_nama`, `kekuatan` (`overlap_pct` kosong untuk PBB titik); Level 2 menambah `calon_nama`. Layer PBB titik disimpan sebagai MultiPoint.
 v0.9.6 (tahap 2): Level 1 dan Level 2 menambah `skor_gabungan` (Level 2: skor kandidat tahap 2 terbaik); padanan tahap 2 bermetode `RULE_NAMA`.
@@ -35,7 +35,8 @@ v0.9.6 (tahap 2): Level 1 dan Level 2 menambah `skor_gabungan` (Level 2: skor ka
 Kandidat (semua CSV fitur) juga memuat `nama_tidak_dinilai` (1/0) untuk fitur V2.
 
 **Modul 1**: `*_atribut_kosong.csv` (`record, id, kolom_kosong`), `*_duplikat.csv` (`record, id, jumlah`), `*_luas_bermasalah.csv` (`record, id, luas, masalah`), `*_per_kolom_kosong.csv` (`nama_kolom, jumlah_kosong, persentase`).
-**Modul 2**: `*_overlap.csv` (`record_a, record_b, luas_irisan_m2`), `*_gap_tertutup.csv` (`gap_id, luas_m2, ditambahkan`).
+**Modul 2**: `*_overlap.csv` (`record_a, record_b, luas_irisan_m2`), `*_gap_tertutup.csv` (`gap_id, luas_m2, status_periksa`).
+**Layer kandidat gap** (`bpn_kandidat_gap`, `04_kandidat_gap`; v0.9.6) dan `kandidat_gap.csv` Modul 3: `gap_id, luas_m2, status_periksa` (`LAYAK_PERIKSA` ≥ minimum / `DI_BAWAH_MINIMUM`), `pbb_terkait` (NOP Level 2 di atas gap, Modul 3/3.1). PBB Level 2 menambah `calon_gap`.
 **Modul 4**: `metrik_train_validation_test.csv` (`algoritma, split, status_acuan, n, positif, …, precision, recall, f1, …`), `feature_importance.csv` (`algoritma, fitur, importance`), `panduan_ambang_metrik.csv` (`nama, panduan, alasan`), `penilaian_per_metrik.csv` (`metrik, nilai, patokan, interpretasi`), `rekomendasi_model.csv` (`urutan, rekomendasi`).
 
 ## 4. `evaluasi_testing_ai.json` (masukan `make_training_report`)
@@ -67,7 +68,7 @@ Metrik per split: `n, positif, negatif, prevalensi, threshold, tp, tn, fp, fn, c
 | Keputusan studio (M6) | `1` Cocok, `0` Tidak cocok, kosong = Belum pasti |
 | Flag luas (M1) | `LUAS_KOSONG_ATAU_NONNUMERIK`, `LUAS_NOL_NEGATIF`, `LUAS_KECIL`, `LUAS_BESAR` |
 | Alasan Level 2 (M3) | lihat `DOMAIN_RULES.md` §1 |
-| Kandidat gap | `bid_tambah=1`, `gap_id=GAPnnnnn` |
+| Kandidat gap | `gap_id=GAPnnnnn`, `status_periksa` `LAYAK_PERIKSA` / `DI_BAWAH_MINIMUM`; status pemeriksaan `LENGKAP` / `TIDAK_LENGKAP`; kode `PBB_DI_ATAS_GAP` (`bid_tambah` tidak lagi diisi sejak 0.9.6) |
 | Validasi nama | `COCOK`, `MIRIP`, `TIDAK_COCOK`, `TIDAK_DINILAI` |
 | Kekuatan Level 1 | `KUAT`, `SEDANG`, `LEMAH` |
 | Mode geometri PBB | `POLIGON`, `TITIK` |

@@ -17,6 +17,7 @@ Sebuah pasangan (BPN *i*, PBB *j*) menjadi **Level 1** hanya bila **tidak ada** 
 | `MULTI_NOP` / `TANPA_NOP` | BPN punya ≠ 1 calon PBB di atas ambang |
 | `MULTI_NIB` / `TANPA_NIB` | PBB punya ≠ 1 calon BPN di atas ambang |
 | `TIDAK_ADA_IRISAN` | (record Level 2) tanpa kandidat beririsan |
+| `PBB_DI_ATAS_GAP` | (PBB Level 2, opsi gap, v0.9.6) PBB beririsan > minimum irisan / titik di dalam kandidat gap `LAYAK_PERIKSA`; petunjuk, bukan alasan gagal. Gap tidak pernah dihitung sebagai calon BPN |
 
 Rumus: `deviasi % = 100·|tertulis − luas_geom| / luas_geom`; `kesamaan % = 100·min(a,b)/max(a,b)`; `overlap_bpn % = 100·irisan/luas_BPN`.
 Ambang sama (`50.0 %` tepat) **tidak lolos**. Irisan kecil-kecil tidak otomatis menggugurkan bila hanya satu calon di atas ambang; dua calon di atas ambang **wajib** Level 2.
@@ -103,7 +104,7 @@ Verdict operasional (`operational_assessment`): `BELUM DAPAT DINILAI` → `BELUM
 | Titik NOP | Lokasi objek pajak PBB tanpa poligon bidang |
 | Validasi nama | Kesamaan nama pemegang hak (BPN) dan wajib pajak (PBB) sebagai penguat padanan |
 | Overlap | Irisan antar poligon; *internal* (dalam satu layer) vs *antar-sumber* (BPN×PBB) |
-| Gap | Lubang tertutup pada gabungan poligon BPN; kandidat bidang tambahan |
+| Gap | Lubang tertutup pada gabungan poligon BPN; kandidat bidang tambahan, disimpan di layer tersendiri. `LAYAK_PERIKSA` bila ≥ luas minimum; jumlah besar hanya memicu peringatan (sering tanda celah sambungan topologi) |
 | Fix geometry | `makeValid` pada poligon invalid |
 | IoU | Irisan / gabungan luas |
 | Studio | Verifikasi manual pasangan di peta |
