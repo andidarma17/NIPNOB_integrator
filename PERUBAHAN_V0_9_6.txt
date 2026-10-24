@@ -1,6 +1,6 @@
 NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
 
-- Modul 3 dan 3.1: opsi baru "Tahap 2: cari ulang padanan Level 2 dalam buffer dengan
+- Modul 3, 3.1 dan 5: opsi baru "Tahap 2: cari ulang padanan Level 2 dalam buffer dengan
   skor nama" (bawaan mati; memerlukan kolom nama BPN dan PBB).
 - Tahap 1 (aturan lama) tidak berubah. Tahap 2 hanya memproses rekaman yang tersisa
   Level 2, kecuali NIB/NOP kosong atau duplikat.
@@ -15,5 +15,12 @@ NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
   skor_spasial, skor_gabungan, alasan_tahap2, metode_padu.
 - PDF Modul 3/3.1: ringkasan jumlah Level 1 tahap 1 vs tahap 2, catatan parameter
   tahap 2, kolom "Tahap" pada tabel kekuatan.
-- Modul 4: pasangan RULE_NAMA tidak dipakai sebagai label silver.
-- Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2.
+- Modul 5: opsi tahap 2 yang sama (buffer sendiri, bawaan 5 m) dijalankan pada baseline
+  sebelum promosi AI; tambahan AI kini bermetode AI_VERIFIED juga di CSV.
+- Modul 4: kolom nama opsional (juga pada layer historis). Dengan nama, model memakai
+  versi fitur QGIS_PLUGIN_V2 = 18 fitur + skor_nama + nama_tidak_dinilai. Model V1 lama
+  tetap dapat dipakai di Modul 5; model V2 menolak data tanpa kolom nama.
+- Modul 4: opsi "Sertakan padanan tahap 2 (RULE_NAMA) sebagai silver" (bawaan mati),
+  label_source SILVER_RULE_NAMA dengan bobot bawaan 0,1.
+- Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2, versi fitur nama,
+  silver RULE_NAMA.

@@ -50,7 +50,8 @@ def name_summary(accepted,names_used):
                     'Kekuatan LEMAH':strength.get('LEMAH',0)})
         stage2=sum(1 for r in accepted if r.get('metode_padu')=='RULE_NAMA')
         if stage2:
-            out.update({'Level 1 tahap 1 (aturan)':len(accepted)-stage2,
+            out.update({'Level 1 tahap 1 (aturan)':sum(1 for r in accepted
+                                                       if r.get('metode_padu') in (None,'','RULE')),
                         'Level 1 tahap 2 (buffer + nama)':stage2})
     return out
 
@@ -123,7 +124,7 @@ class ToolDialog(QDialog):
         scroll=QScrollArea();scroll.setWidgetResizable(True)
         form_widget=QWidget();self.panel=QVBoxLayout(form_widget)
         scroll.setWidget(form_widget);container.addWidget(scroll)
-        names=modul in (3,31,5)
+        names=modul in (3,31,4,5)
         pbb_label={3:'Layer PBB (poligon):',31:'Layer PBB (titik NOP):'}.get(
             modul,'Layer PBB (poligon atau titik):')
         self.bpn=Selector('Layer BPN (poligon):',with_name=names)
@@ -204,15 +205,26 @@ class ToolDialog(QDialog):
             self.require_name=QCheckBox('Nama TIDAK COCOK menurunkan pasangan ke Level 2 (NAMA_TIDAK_COCOK)')
             self.require_name.setChecked(False)
             self.param_form.addRow('',self.require_name)
-        if m in (3,31):
+        if m in (3,31,5):
             self.setup_name_stage()
         if m==4:
+            info=QLabel('Bila kolom nama BPN dan PBB dipilih, model dilatih dengan fitur nama '
+                        '(skor_nama, nama_tidak_dinilai; versi fitur QGIS_PLUGIN_V2) dan Modul 5 '
+                        'wajib memakai kolom nama juga.')
+            info.setWordWrap(True);self.param_form.addRow(info)
             self.silver=self.filepick('CSV kandidat Modul 3 (silver):')
+            self.name_silver=QCheckBox('Sertakan padanan tahap 2 (RULE_NAMA) dari CSV Modul 3 sebagai silver')
+            self.name_silver.setChecked(False)
+            self.param_form.addRow('',self.name_silver)
+            self.add_spin('name_silver_weight','Bobot silver RULE_NAMA:',.10,0,1.,2)
+            self.param['name_silver_weight'].setEnabled(False)
+            self.name_silver.toggled.connect(self.param['name_silver_weight'].setEnabled)
             self.gold_features=self.filepick('CSV fitur historis terverifikasi (opsional):')
             self.gold_operator=self.filepick('CSV label operator pada layer yang dipilih (opsional):')
             self.hist_toggle=QCheckBox('Gunakan pasangan GeoJSON historis + CSV label (opsional)')
             self.param_form.addRow(self.hist_toggle)
-            self.hist_bpn=Selector('BPN historis:');self.hist_pbb=Selector('PBB historis:')
+            self.hist_bpn=Selector('BPN historis:',with_name=True)
+            self.hist_pbb=Selector('PBB historis:',with_name=True)
             self.hist_bpn.setVisible(False);self.hist_pbb.setVisible(False)
             self.panel.addWidget(self.hist_bpn);self.panel.addWidget(self.hist_pbb)
             self.hist_csv=self.filepick('CSV pasangan historis berlabel:')
@@ -231,14 +243,14 @@ class ToolDialog(QDialog):
             self.promote.setChecked(False)
             self.param_form.addRow(QLabel('PERHATIAN: file model joblib hanya dari sumber yang dipercaya.'))
     def setup_name_stage(self):
-        """Tahap 2 (Modul 3/3.1): buffer search + combined score for Level 2."""
+        """Tahap 2 (Modul 3/3.1/5): buffer search + combined score for Level 2."""
         self.name_stage=QCheckBox('Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama')
         self.name_stage.setToolTip('Memerlukan kolom nama BPN dan PBB. Pasangan yang lolos menjadi '
                                    'Level 1 dengan metode_padu=RULE_NAMA.')
         self.name_stage.setChecked(False)
         self.param_form.addRow('',self.name_stage)
         keys=[]
-        if self.modul==3:
+        if self.modul!=31:
             self.add_spin('stage2_buffer','Buffer tahap 2 di sekitar bidang BPN (m):',5,0,1000);keys.append('stage2_buffer')
         for key,label,default,maxv in (
                 ('w_name','Bobot skor nama:',.60,1.),('w_spatial','Bobot skor spasial (jarak):',.25,1.),
@@ -469,20 +481,31 @@ class ToolDialog(QDialog):
                         overlap_threshold=options['min_overlap'],similarity_threshold=options['min_sim'],
                         names_used=names_used)
         return exported+[pdf,archive]
+    def ml_names(self,bpn,pbb):
+        """Name columns for Modul 4: both or neither."""
+        bname=bpn.name_field();pname=pbb.name_field()
+        if bool(bname)!=bool(pname):
+            raise ValueError('Fitur nama memerlukan kolom nama pada BPN dan PBB, '
+                             'atau pilih "(tidak digunakan)" pada keduanya.')
+        return bname,pname
     def prepared_ml(self):
         b,p,bid,pid,ba,pa=self.two_layers()
+        bname,pname=self.ml_names(self.bpn,self.pbb)
         br,pr,logs=read_pair(b,p,self.reproject.isChecked())
         fix_geometry(br);fix_geometry(pr)
         internal_overlap(br,.01);internal_overlap(pr,.01)
-        prepare_local(br,bid,ba,50);prepare_local(pr,pid,pa,50)
+        prepare_local(br,bid,ba,50,bname);prepare_local(pr,pid,pa,50,pname)
         return b,p,br,pr,logs
     def run4(self,out):
         from .ml import (labels_for_pairs,add_historical_labeled_features,
-                         add_historical_pair_labels,train_model)
-        from .engine import FEATURE_NAMES
+                         add_historical_pair_labels,train_model,feature_version)
+        from .engine import FEATURE_VERSIONS
         from .storage import zip_csv
         from collections import Counter
         silver=[];gold=[];candidates=[];unresolved=[];logs=[]
+        version=feature_version(bool(self.ml_names(self.bpn,self.pbb)[0]))
+        features=FEATURE_VERSIONS[version]
+        name_weight=self.val('name_silver_weight') if self.name_silver.isChecked() else None
         try:
             _,_,br,pr,logs=self.prepared_ml()
             candidates=make_candidate_rows(br,pr,.01,self.val('radius'))
@@ -496,25 +519,33 @@ class ToolDialog(QDialog):
                 if any(v['src_bpn_sha']!=exp_b or v['src_pbb_sha']!=exp_p for v in raw):
                     raise ValueError('Data operator telah berubah sejak Modul 3. Jalankan ulang Modul 3 untuk file terbaru.')
             silver,gold,unresolved=labels_for_pairs(candidates,self.gold_operator.text().strip() or None,
-                                              silver_path)
+                                              silver_path,name_silver_weight=name_weight)
         except ValueError:
             # May train from an external fully labelled feature CSV only; don't hide
             # other failures when source layers were supplied.
             if not self.gold_features.text().strip():raise
-        n_hist=add_historical_labeled_features(gold,self.gold_features.text().strip())
+        n_hist=add_historical_labeled_features(gold,self.gold_features.text().strip(),features)
         if self.hist_toggle.isChecked():
             bl,bi,ba=self.hist_bpn.values();pl,pi,pa=self.hist_pbb.values()
             if not (bl and pl and bi and ba and pi and pa):
                 raise ValueError('Layer historis dan kolomnya belum lengkap.')
+            hbname,hpname=self.ml_names(self.hist_bpn,self.hist_pbb)
+            if version=='QGIS_PLUGIN_V2' and not hbname:
+                raise ValueError('Model dengan fitur nama memerlukan kolom nama pada layer historis juga.')
             rb,rp,log=read_pair(bl,pl,self.reproject.isChecked())
             fix_geometry(rb);fix_geometry(rp)
-            prepare_local(rb,bi,ba,50);prepare_local(rp,pi,pa,50)
+            prepare_local(rb,bi,ba,50,hbname);prepare_local(rp,pi,pa,50,hpname)
             hist_candidates=make_candidate_rows(rb,rp,.01,self.val('radius'))
             count=add_historical_pair_labels(gold,hist_candidates,self.hist_csv.text().strip())
             logs.append('Pasangan historis GOLD: %s'%count)
         gold_current_ids={x['pair_id'] for x in gold if x.get('label_source')=='GOLD_OPERATOR'}
         silver=[x for x in silver if x['pair_id'] not in gold_current_ids]
-        model,metadata,metrics=train_model(silver,gold,out,self.val('target'))
+        model,metadata,metrics=train_model(silver,gold,out,self.val('target'),version)
+        logs.append('Versi fitur model: %s (%d fitur%s).'%(version,len(features),
+                    ', termasuk nama' if version=='QGIS_PLUGIN_V2' else ''))
+        if name_weight is not None:
+            logs.append('Silver RULE_NAMA (tahap 2): %d pasangan, bobot %.2f.'%(
+                sum(1 for x in silver if x.get('label_source')=='SILVER_RULE_NAMA'),name_weight))
         import json
         from .ai_pdf import make_training_report
         from .evaluation import threshold_guidance
@@ -588,7 +619,7 @@ class ToolDialog(QDialog):
                           for key,passed in gates.items()})
                 r['alasan_tidak_promosi']='; '.join(key.replace('_',' ') for key,passed in gates.items() if not passed)
                 if not all(gates.values()):continue
-                occupied_b.add(i);occupied_p.add(j)
+                occupied_b.add(i);occupied_p.add(j);r['metode_padu']='AI_VERIFIED'
                 extras.append(r)
             if extras:
                 # Build output for AI extras; baseline protected.
@@ -630,7 +661,9 @@ class ToolDialog(QDialog):
                      'AI tanpa evaluasi GOLD independen hanya memberikan rekomendasi studio.',
                      'Ambang skor minimum %.2f, selisih kandidat %.2f.' %
                        (self.val('confidence'),self.val('margin')),
-                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.']+name_notes(opts,pmode),meta,logs,
+                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.']+name_notes(opts,pmode)+
+                    (['Model memakai fitur nama (QGIS_PLUGIN_V2): skor_nama dan nama_tidak_dinilai.']
+                     if meta.get('feature_version')=='QGIS_PLUGIN_V2' else []),meta,logs,
                     crs=b.crs().authid(),
                     metadata=self.report_metadata(b,p,opts['bpn_id'],opts['pbb_id'],
                         opts['bpn_area'],opts['pbb_area'],

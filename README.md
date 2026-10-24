@@ -34,7 +34,7 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 
 ## Pembaruan v0.9.6 - Pemadanan tahap 2 (buffer + skor nama)
 
-Pada Modul 3 dan 3.1, bila kolom nama BPN dan PBB dipilih, centang *"Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama"*:
+Pada Modul 3, 3.1 dan 5, bila kolom nama BPN dan PBB dipilih, centang *"Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama"*:
 
 1. **Tahap 1** — aturan yang sudah ada dijalankan apa adanya, menghasilkan Level 1 dan Level 2.
 2. **Tahap 2** — rekaman Level 2 (kecuali NIB/NOP kosong atau duplikat) dicari ulang kandidatnya dalam **buffer** di sekitar bidang BPN (bawaan **5 m**; Modul 3.1 memakai toleransi titik). Tiap kandidat dinilai:
@@ -42,7 +42,12 @@ Pada Modul 3 dan 3.1, bila kolom nama BPN dan PBB dipilih, centang *"Tahap 2: ca
    * `skor_gabungan` = 0,60·nama + 0,25·spasial + 0,15·luas (bobot dapat diubah).
 3. Kandidat menjadi **Level 1** dengan `metode_padu=RULE_NAMA` bila skor gabungan ≥ 80, skor nama ≥ 60, unggul ≥ 10 poin dari kandidat ke-2 di sisi BPN maupun PBB, dan pasangan 1:1. Semua ambang dapat diubah di dialog.
 
-Rekaman yang tetap Level 2 mendapat kolom `skor_gabungan` (kandidat terbaik) untuk prioritas verifikasi studio. Detail per kandidat (`skor_spasial`, `skor_gabungan`, `alasan_tahap2`) ada di `pasangan_kandidat.csv`. Pasangan tahap 2 tidak dipakai sebagai label silver Modul 4. Lihat `nibnop_docs/DOMAIN_RULES.md` §1c.
+Rekaman yang tetap Level 2 mendapat kolom `skor_gabungan` (kandidat terbaik) untuk prioritas verifikasi studio. Detail per kandidat (`skor_spasial`, `skor_gabungan`, `alasan_tahap2`) ada di `pasangan_kandidat.csv`. Lihat `nibnop_docs/DOMAIN_RULES.md` §1c.
+
+**Nama di Modul 4 dan 5:**
+
+* **Modul 4** — kolom nama BPN/PBB opsional. Bila dipilih, model dilatih dengan fitur nama (`skor_nama`, `nama_tidak_dinilai`; versi fitur `QGIS_PLUGIN_V2`, 20 fitur). Centang *"Sertakan padanan tahap 2 (RULE_NAMA) dari CSV Modul 3 sebagai silver"* untuk memakai padanan tahap 2 sebagai label silver dengan bobot sendiri (bawaan 0,1; silver aturan 0,2).
+* **Modul 5** — tahap 2 yang sama tersedia sebelum promosi AI (aturan → tahap 2 → AI). Model berfitur nama wajib dijalankan dengan kolom nama; model lama (V1) tetap dapat dipakai.
 
 ## Pembaruan v0.9.5 - Modul 3.1 (PBB titik NOP) dan validasi nama
 
@@ -60,7 +65,7 @@ Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligo
 * Bidang BPN tanpa titik → `TIDAK_ADA_TITIK`; titik di luar semua bidang → `TITIK_DI_LUAR_SEMUA_BIDANG`.
 * Modul 2: "overlap" PBB titik berarti **titik berimpit** (jarak ≤ 0,01 m); perbaikan geometri dan selisih luas geometri tidak berlaku untuk titik.
 
-**Validasi nama (opsional, Modul 3, 3.1, 5, 6)** — pilih kolom nama pemegang hak (BPN, mis. `NAMA`) dan nama wajib pajak (PBB, mis. `NM_WP`), atau biarkan `(tidak digunakan)`:
+**Validasi nama (opsional, Modul 3, 3.1, 4, 5, 6)** — pilih kolom nama pemegang hak (BPN, mis. `NAMA`) dan nama wajib pajak (PBB, mis. `NM_WP`), atau biarkan `(tidak digunakan)`:
 
 * Setelah kandidat NIB–NOP terbentuk, nama keduanya dibandingkan (`skor_nama` 0–100) setelah normalisasi gelar/sapaan (H., Hj., Drs., S.H., Alm., Ny., …), ejaan lama (OE→U, DJ→J, TJ→C), varian Muhammad, dan urutan kata. Status `valid_nama`: **COCOK** (≥ 90 %), **MIRIP** (≥ 60 %), **TIDAK_COCOK**, atau **TIDAK_DINILAI** (nama kosong / kolom tidak dipilih).
 * Setiap pasangan Level 1 diberi **`kekuatan`**:

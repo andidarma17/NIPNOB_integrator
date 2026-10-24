@@ -60,6 +60,7 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Status model | `GOLD_TESTED_REVIEW_REQUIRED` bila TEST precision ≥ target, ≥ 10 prediksi positif, validation ada, GOLD ≥ 100; selain itu `PREVIEW_ONLY` |
 | Keluaran | `model_terpilih.joblib`, `metadata_model.json`, `evaluasi_testing_ai.json`, PDF, ZIP (9 CSV) |
 | Catatan | Label Level 2 tanpa label eksplisit **bukan** negatif. Data bertanda SINTETIS/DEMO ditolak |
+| Nama (0.9.6) | Kolom nama opsional BPN/PBB (juga layer historis) → fitur `QGIS_PLUGIN_V2` (+ `skor_nama`, `nama_tidak_dinilai`). Opsi "Sertakan padanan tahap 2 (RULE_NAMA) sebagai silver", bobot bawaan 0,1 |
 
 ## Modul 5 — Inference AI dan Level 1/2
 
@@ -70,6 +71,7 @@ Format keluaran layer: GeoPackage (disarankan) / GeoJSON / Shapefile (peringatan
 | Proses | Baseline aturan (Modul 3) dipertahankan; skor AI semua kandidat; promosi ke Level 1 **hanya** bila status `GOLD_TESTED_REVIEW_REQUIRED` + checkbox + semua gerbang (skor, margin, ID unik, tanpa overlap, deviasi luas, tanpa pesaing kuat) |
 | Keluaran | `01_padanan_level1` (`metode_padu=AI_VERIFIED` untuk tambahan, `skor_ai`), `02_bpn_level2`, `03_pbb_level2`, PDF, ZIP (`skor_kandidat.csv`, `pasangan_rule.csv`, `tambahan_ai.csv`) |
 | Catatan | Tanpa model → hanya baseline. Model silver-only → hanya prioritas verifikasi |
+| Nama (0.9.6) | Tahap 2 opsional sama dengan Modul 3 (buffer bawaan 5 m) sebelum promosi AI; tambahan AI bermetode `AI_VERIFIED`. Model V2 (fitur nama) memerlukan kolom nama |
 
 ## Modul 6 — Verifikasi Studio interaktif
 

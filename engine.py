@@ -376,7 +376,7 @@ def make_candidate_rows(b,p,area_tol=.01,radius=0.,max_near=8,point_tol=0.,
                   'pbb_invalid':rp['a'].get('geom_invalid',0),
                   'bpn_internal_overlap':rb['a'].get('overlap',0),
                   'pbb_internal_overlap':rp['a'].get('overlap',0),
-                  'skor_nama':name_score,
+                  'skor_nama':name_score,'nama_tidak_dinilai':int(name_score is None),
                   'valid_nama':name_status(name_score,name_ok,name_partial),
                   'x_bpn':center_b.x(), 'y_bpn':center_b.y()})
             choices.append(vals)
@@ -578,6 +578,10 @@ FEATURE_NAMES = ['overlap_bpn_pct','overlap_pbb_pct','iou','kesamaan_luas_geom',
                 'bpn_luas_kosong','pbb_luas_kosong','bpn_invalid','pbb_invalid',
                 'bpn_internal_overlap','pbb_internal_overlap',
                 'jumlah_calon_radius_bpn','jumlah_calon_radius_pbb']
+# V2 (v0.9.6): the 18 features plus name evidence, used when Modul 4 gets name columns.
+NAME_FEATURE_NAMES = ['skor_nama','nama_tidak_dinilai']
+FEATURE_VERSIONS = {'QGIS_PLUGIN_V1':FEATURE_NAMES,
+                    'QGIS_PLUGIN_V2':FEATURE_NAMES+NAME_FEATURE_NAMES}
 
 
 def layer_fingerprint(layer):

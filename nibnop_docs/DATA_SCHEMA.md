@@ -31,7 +31,8 @@ v0.9.6 (tahap 2): Level 1 dan Level 2 menambah `skor_gabungan` (Level 2: skor ka
 `pair_id, record_bpn, record_pbb, NIB, NOP, label (1|0|kosong), status_verifikasi (DIVERIFIKASI), sumber_verifikasi, operator, catatan, waktu` (+ opsional `wilayah` untuk pengelompokan split, `jenis_data`).
 
 **`gold_labels.csv`**: kandidat + `label`, `label_source` (`GOLD_OPERATOR`, `GOLD_HISTORICAL`, `GOLD_HISTORICAL_GEO`), `sample_weight`, `sumber_verifikasi`, `group_id`.
-**`silver_labels.csv`**: `label_source` `SILVER_RULE` (1) / `SILVER_CONTRAST` (0), `sample_weight=0.2`.
+**`silver_labels.csv`**: `label_source` `SILVER_RULE` (1) / `SILVER_CONTRAST` (0), `sample_weight=0.2`; opsional `SILVER_RULE_NAMA` (1, bobot pilihan operator, bawaan 0,1).
+Kandidat (semua CSV fitur) juga memuat `nama_tidak_dinilai` (1/0) untuk fitur V2.
 
 **Modul 1**: `*_atribut_kosong.csv` (`record, id, kolom_kosong`), `*_duplikat.csv` (`record, id, jumlah`), `*_luas_bermasalah.csv` (`record, id, luas, masalah`), `*_per_kolom_kosong.csv` (`nama_kolom, jumlah_kosong, persentase`).
 **Modul 2**: `*_overlap.csv` (`record_a, record_b, luas_irisan_m2`), `*_gap_tertutup.csv` (`gap_id, luas_m2, ditambahkan`).
@@ -52,7 +53,7 @@ Metrik per split: `n, positif, negatif, prevalensi, threshold, tp, tn, fp, fn, c
 
 ## 5. `metadata_model.json`
 
-`status, feature_version="QGIS_PLUGIN_V1", features[18], mode_geometri_pbb (POLIGON|TITIK; tidak ada = POLIGON), algorithm, n_silver, n_gold, n_training, n_validation, n_testing, target_precision, holdout{…}, threshold, evaluation_file, note`.
+`status, feature_version ("QGIS_PLUGIN_V1" | "QGIS_PLUGIN_V2"), features[18 | 20], mode_geometri_pbb (POLIGON|TITIK; tidak ada = POLIGON), algorithm, n_silver, n_gold, n_training, n_validation, n_testing, target_precision, holdout{…}, threshold, evaluation_file, note`.
 
 ## 6. Kosakata status & label (untuk desain — harus bisa ditampilkan)
 
