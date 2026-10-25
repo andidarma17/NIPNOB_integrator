@@ -10,13 +10,38 @@ from qgis.core import (QgsFeature, QgsField, QgsSpatialIndex, QgsVectorLayer,
                        QgsWkbTypes, QgsUnitTypes)
 from .compat import field_type
 from .logic import (empty, ident, number, dev_percent, similarity, gate_pair,
-                    name_similarity, name_status, match_strength)
+                    name_similarity, name_status, match_strength, spatial_score,
+                    combined_score, select_stage2, STAGE2_DEFAULTS)
 
 QA_COLUMNS = {'geom_kosong','geom_invalid','geom_fixed','overlap','bid_tambah',
               'selisih_luas','persen_selisihL','id_kosong','id_duplikat','luas_flag',
               'level','kode_l2','alasan_l2','calon_n','calon_id', 'skor_ai',
               'metode_padu','nop_padanan','skor_nama','valid_nama','kekuatan',
-              'calon_nama'}
+              'calon_nama','skor_gabungan','calon_gap'}
+
+
+
+class Cancelled(Exception):
+    """Operator pressed Batal; the run stops without writing results."""
+
+
+class Progress:
+    """Progress/cancel hooks for long loops; ``dialogs.GuiProgress`` shows them.
+
+    ``tick`` raises ``Cancelled``. Gap stages poll ``cancelled`` instead, stop
+    early (status TIDAK_LENGKAP) and call ``resume`` so the run continues.
+    """
+    def step(self, label):pass
+    def update(self, done, total):pass
+    def cancelled(self):return False
+    def resume(self):pass
+    def tick(self, done, total):
+        self.update(done, total)
+        if self.cancelled():
+            raise Cancelled('Proses dibatalkan operator.')
+
+
+NO_PROGRESS = Progress()
 
 # Two PBB points closer than this (m) are flagged as coincident ("titik ganda").
 POINT_COINCIDENT_TOL = .01
@@ -104,9 +129,11 @@ def polygon_only(g):
         return QgsGeometry()
 
 
-def fix_geometry(records):
+def fix_geometry(records, progress=NO_PROGRESS):
     notes=[]
-    for r in records:
+    progress.step('Memeriksa dan memperbaiki geometri')
+    for n,r in enumerate(records,1):
+        progress.tick(n,len(records))
         geom=r['geom']; isnull=geom.isNull() or geom.isEmpty()
         invalid=0;fixed=0
         if not isnull:
@@ -143,12 +170,14 @@ def spatial_index(records):
     return idx,ref
 
 
-def internal_overlap(records,min_area=.01,point_tol=POINT_COINCIDENT_TOL):
+def internal_overlap(records,min_area=.01,point_tol=POINT_COINCIDENT_TOL,progress=NO_PROGRESS):
     """Polygons: irisan > min_area. Points: coincident within point_tol m."""
     index,by_id=spatial_index(records)
     logs=[]
     for r in records:r['a']['overlap']=0
-    for a in records:
+    progress.step('Mencari overlap internal')
+    for n,a in enumerate(records,1):
+        progress.tick(n,len(records))
         geom=a['geom']
         if geom.isNull() or geom.isEmpty():continue
         a_point=is_point_geom(geom)
@@ -175,34 +204,122 @@ def internal_overlap(records,min_area=.01,point_tol=POINT_COINCIDENT_TOL):
     return logs
 
 
-def enclosed_gaps(records,min_gap=1.,max_gaps=2500):
-    """Extract actual interior holes of polygonal union; exterior voids excluded."""
+GAP_STATES = ('LAYAK_PERIKSA', 'DI_BAWAH_MINIMUM')
+GAP_SCHEMA = [('gap_id','String'),('luas_m2','Double'),('status_periksa','String'),
+              ('pbb_terkait','String')]
+
+
+def enclosed_gaps(records,min_gap=1.,warn_gaps=2500,progress=NO_PROGRESS):
+    """Interior holes of the polygon union (exterior voids excluded) as candidate rows.
+
+    Every hole is kept with ``luas_m2`` and ``status_periksa`` (``LAYAK_PERIKSA``
+    when >= ``min_gap``, else ``DI_BAWAH_MINIMUM``). More than ``warn_gaps``
+    eligible holes only adds a warning. Batal during extraction stops early:
+    ``status`` becomes ``TIDAK_LENGKAP`` and the run continues.
+    Returns (gap_rows, summary) with summary keys terdeteksi, layak, diproses,
+    status, peringatan.
+    """
+    summary={'terdeteksi':0,'layak':0,'diproses':0,'status':'LENGKAP','peringatan':[]}
     geoms=[r['geom'] for r in records if not r['geom'].isNull() and not r['geom'].isEmpty()]
-    if not geoms:return [],[]
+    if not geoms:return [],summary
+    progress.step('Menggabungkan bidang BPN untuk mencari gap '
+                  '(langkah ini tidak dapat disela; Batal berlaku sesudahnya)')
     union=polygon_only(QgsGeometry.unaryUnion(geoms))
-    if union.isNull() or union.isEmpty():return [],[]
+    if union.isNull() or union.isEmpty():return [],summary
     polys=union.asMultiPolygon() if union.isMultipart() else [union.asPolygon()]
-    gaps=[];allholes=[]
-    for polygon in polys:
-        for ring in polygon[1:]:
-            if len(ring)<4: continue
-            geo=QgsGeometry.fromPolygonXY([ring])
-            area=geo.area()
-            info={'gap_id':'GAP%05d'% (len(allholes)+1),'luas_m2':round(area,4),
-                  'ditambahkan':int(area>=min_gap)}
-            allholes.append(info)
-            if area>=min_gap:gaps.append((geo,info))
-            if len(allholes)>max_gaps:
-                raise ValueError('Terlalu banyak celah tertutup. Periksa geometri/topologi lebih dulu.')
-    return gaps,allholes
+    rings=[ring for polygon in polys for ring in polygon[1:] if len(ring)>=4]
+    summary['terdeteksi']=len(rings)
+    progress.step('Mengekstrak gap tertutup')
+    rows=[]
+    for n,ring in enumerate(rings,1):
+        progress.update(n,len(rings))
+        if progress.cancelled():
+            summary['status']='TIDAK_LENGKAP'
+            progress.resume()
+            break
+        geo=QgsGeometry.fromPolygonXY([ring])
+        area=geo.area()
+        rows.append({'idx':n,'fid':-1,'geom':geo,
+                     'a':{'gap_id':'GAP%05d'%n,'luas_m2':round(area,4),
+                          'status_periksa':GAP_STATES[0] if area>=min_gap else GAP_STATES[1]}})
+    summary['diproses']=len(rows)
+    summary['layak']=sum(1 for r in rows if r['a']['status_periksa']==GAP_STATES[0])
+    if summary['layak']>warn_gaps:
+        summary['peringatan'].append(
+            'Jumlah gap >= %g m2 (%d) melebihi ambang peringatan %d; periksa topologi BPN '
+            '(celah sambungan antarbidang) sebelum memakai kandidat gap.'
+            % (min_gap,summary['layak'],warn_gaps))
+    if summary['status']=='TIDAK_LENGKAP':
+        summary['peringatan'].append('Pemeriksaan gap dibatalkan operator: %d dari %d gap diproses.'
+                                     % (summary['diproses'],summary['terdeteksi']))
+    return rows,summary
 
 
-def spatial_audit(records, id_field, area_field, min_area=.01, min_gap=1., add_gaps=False):
+def gap_rows_layer(gap_rows, crs, name='Kandidat gap BPN'):
+    return layer_from_records(gap_rows,crs,[(k,field_type(t)) for k,t in GAP_SCHEMA],
+                              name,'MultiPolygon')
+
+
+def gap_hints(gap_rows, pbb_rows, summary, min_area=.01, progress=NO_PROGRESS):
+    """Flag PBB records lying on a LAYAK_PERIKSA gap (calon bidang belum terdaftar).
+
+    A PBB qualifies when its irisan with the gap > ``min_area`` or its point lies
+    in the gap. It gets ``PBB_DI_ATAS_GAP`` in ``kode_l2`` and ``calon_gap``;
+    the gap gets ``pbb_terkait``. Gaps never compete in 1:1 matching. Batal
+    stops early and marks ``summary['status']`` TIDAK_LENGKAP. Returns count.
+    """
+    usable=[g for g in gap_rows if g['a']['status_periksa']==GAP_STATES[0]]
+    if not usable or not pbb_rows:return 0
+    index,ref=spatial_index(usable)
+    flagged=0
+    progress.step('Mencocokkan PBB dengan kandidat gap')
+    for n,rp in enumerate(pbb_rows,1):
+        progress.update(n,len(pbb_rows))
+        if progress.cancelled():
+            summary['status']='TIDAK_LENGKAP'
+            summary['peringatan'].append('Pencocokan PBB dengan gap dibatalkan operator: '
+                                         '%d dari %d PBB diperiksa.' % (n-1,len(pbb_rows)))
+            progress.resume()
+            break
+        gp=rp['geom']
+        if gp.isNull() or gp.isEmpty():continue
+        hits=[]
+        for j in index.intersects(gp.boundingBox()):
+            gap=ref[j]
+            if not gap['geom'].intersects(gp):continue
+            if is_point_geom(gp):
+                hits.append((0.,gap))
+                continue
+            inter=gap['geom'].intersection(gp)
+            area=0. if inter.isNull() or inter.isEmpty() else inter.area()
+            if area>min_area:hits.append((area,gap))
+        if not hits:continue
+        hits.sort(key=lambda h:-h[0])
+        a=rp['a']
+        codes=[c for c in str(a.get('kode_l2') or '').split(';') if c]+['PBB_DI_ATAS_GAP']
+        a.update(kode_l2=';'.join(codes),alasan_l2='; '.join(codes),
+                 calon_gap=';'.join(h[1]['a']['gap_id'] for h in hits[:5]))
+        for _,gap in hits:
+            gap['a']['pbb_terkait']=';'.join(v for v in (gap['a'].get('pbb_terkait'),
+                                                         str(a.get('_id_field_value') or '')) if v)
+        flagged+=1
+    return flagged
+
+
+def spatial_audit(records, id_field, area_field, min_area=.01, min_gap=1., add_gaps=False,
+                  warn_gaps=2500, progress=NO_PROGRESS):
+    """Fix geometry, flag internal overlap and (optionally) extract closed gaps.
+
+    Gaps are returned as separate candidate rows (``enclosed_gaps``), never
+    appended to ``records``. Returns (records, overlaps, gap_rows, gap_summary, notes);
+    gap_summary is None when gaps were not requested.
+    """
     records=[{'idx':r['idx'],'fid':r['fid'],'a':dict(r['a']),
               'geom':QgsGeometry(r['geom'])} for r in records]
-    notes=fix_geometry(records)
-    overlaps=internal_overlap(records,min_area)
-    gaps, holes=enclosed_gaps(records,min_gap) if add_gaps else ([],[])
+    notes=fix_geometry(records,progress)
+    overlaps=internal_overlap(records,min_area,progress=progress)
+    gaps,summary=enclosed_gaps(records,min_gap,warn_gaps,progress) if add_gaps else ([],None)
+    if summary:notes+=summary['peringatan']
     for r in records:
         g=r['geom']; a=r['a']
         area=None if g.isNull() or g.isEmpty() or is_point_geom(g) else g.area()
@@ -210,14 +327,7 @@ def spatial_audit(records, id_field, area_field, min_area=.01, min_gap=1., add_g
         a['bid_tambah']=int(a.get('bid_tambah',0) or 0)
         a['selisih_luas']=None if written is None or area is None else area-written
         a['persen_selisihL']=None if written is None or written<=0 or area is None else (area-written)/written*100.
-    if add_gaps:
-        for geom,entry in gaps:
-            attrs={id_field:'',area_field:None,'bid_tambah':1,
-                   'geom_kosong':0,'geom_invalid':0,'geom_fixed':0,
-                   'overlap':0,'selisih_luas':None,'persen_selisihL':None,
-                   'gap_id':entry['gap_id']}
-            records.append({'idx':len(records)+1,'fid':-1,'a':attrs,'geom':geom})
-    return records,overlaps,holes,notes
+    return records,overlaps,gaps,summary,notes
 
 
 def columns(source_layer, extra=None, drop_old=True):
@@ -298,7 +408,7 @@ def candidate_rank(c):
 
 
 def make_candidate_rows(b,p,area_tol=.01,radius=0.,max_near=8,point_tol=0.,
-                        name_thresholds=(90.,60.)):
+                        name_thresholds=(90.,60.),progress=NO_PROGRESS):
     """Return feature vectors shared by Modules 3,4,5 and studio.
     record indexes are stable 1-based at the moment of the run.
 
@@ -315,7 +425,9 @@ def make_candidate_rows(b,p,area_tol=.01,radius=0.,max_near=8,point_tol=0.,
     index, lookup=spatial_index(p)
     candidates=[]; per_b=defaultdict(list);per_p=defaultdict(list)
     name_ok,name_partial=name_thresholds
-    for rb in b:
+    progress.step('Membangun pasangan kandidat BPN-PBB')
+    for n,rb in enumerate(b,1):
+        progress.tick(n,len(b))
         gb=rb['geom'];a=rb['a'];
         if gb.isNull() or gb.isEmpty() or gb.area()<=0:continue
         bounds=gb.boundingBox()
@@ -375,7 +487,7 @@ def make_candidate_rows(b,p,area_tol=.01,radius=0.,max_near=8,point_tol=0.,
                   'pbb_invalid':rp['a'].get('geom_invalid',0),
                   'bpn_internal_overlap':rb['a'].get('overlap',0),
                   'pbb_internal_overlap':rp['a'].get('overlap',0),
-                  'skor_nama':name_score,
+                  'skor_nama':name_score,'nama_tidak_dinilai':int(name_score is None),
                   'valid_nama':name_status(name_score,name_ok,name_partial),
                   'x_bpn':center_b.x(), 'y_bpn':center_b.y()})
             choices.append(vals)
@@ -405,14 +517,15 @@ def prepare_local(rows,id_field,area_field,max_dev,name_field=None):
                          else dev_percent(a.get(area_field),g.area()))
 
 
-def determine_levels(b,p,opts):
+def determine_levels(b,p,opts,progress=NO_PROGRESS):
     """> threshold measured only against BPN; 1:1 uniqueness among passing candidates.
 
     Mode titik (PBB = points): a candidate qualifies when the NOP point lies
     inside the BPN parcel (replaces the overlap gate). Every other gate stays.
     Optional names (opts 'bpn_name'/'pbb_name') add ``valid_nama`` and
     ``kekuatan`` to accepted pairs, and fail a pair only with
-    ``opts['require_name']``.
+    ``opts['require_name']``. With names and ``opts['name_stage']`` a second
+    stage (``name_stage``) re-examines the remaining Level 2 records.
     """
     prepare_local(b,opts['bpn_id'],opts['bpn_area'],opts['max_dev'],opts.get('bpn_name'))
     prepare_local(p,opts['pbb_id'],opts['pbb_area'],opts['max_dev'],opts.get('pbb_name'))
@@ -421,7 +534,8 @@ def determine_levels(b,p,opts):
     pairs=make_candidate_rows(b,p,opts['min_irisan'],radius=0.,
                               point_tol=float(opts.get('point_tol',0.) or 0.) if pmode else 0.,
                               name_thresholds=(opts.get('name_match',90.),
-                                               opts.get('name_partial',60.)))
+                                               opts.get('name_partial',60.)),
+                              progress=progress)
     if pmode:
         strong=[r for r in pairs if r['titik_di_dalam']==1]
     else:
@@ -454,6 +568,17 @@ def determine_levels(b,p,opts):
         if r['record_bpn'] in seen_b or r['record_pbb'] in seen_p:
             raise AssertionError('Pasangan tidak unik; cek aturan pemaduan')
         seen_b.add(r['record_bpn']);seen_p.add(r['record_pbb']);clean.append(r)
+    stage2=[]
+    if names_used and opts.get('name_stage'):
+        stage2=name_stage(b,p,pairs,seen_b,seen_p,opts,pmode,progress)
+        for r in stage2:
+            seen_b.add(r['record_bpn']);seen_p.add(r['record_pbb'])
+    best2_b={};best2_p={}
+    for r in pairs:
+        score=r.get('skor_gabungan')
+        if score is None:continue
+        best2_b[r['record_bpn']]=max(score,best2_b.get(r['record_bpn'],score))
+        best2_p[r['record_pbb']]=max(score,best2_p.get(r['record_pbb'],score))
     def name_hint(cands,key):
         return ';'.join(str(v[key]) for v in sorted(cands,key=candidate_rank)
                         if v.get('valid_nama')=='COCOK')
@@ -468,7 +593,8 @@ def determine_levels(b,p,opts):
             level=2,calon_n=counts_b[rb['idx']],
             kode_l2=';'.join(reasons),alasan_l2='; '.join(reasons),
             calon_id=';'.join(str(v['NOP']) for v in sorted(by_b[rb['idx']],key=candidate_rank)[:5]),
-            calon_nama=name_hint(by_b[rb['idx']],'NOP'))
+            calon_nama=name_hint(by_b[rb['idx']],'NOP'),
+            skor_gabungan=best2_b.get(rb['idx']))
         b_level2.append(nr)
     for rp in p:
         if rp['idx'] in seen_p:continue
@@ -478,13 +604,63 @@ def determine_levels(b,p,opts):
             level=2,calon_n=counts_p[rp['idx']],kode_l2=';'.join(reasons),
             alasan_l2='; '.join(reasons),
             calon_id=';'.join(str(v['NIB']) for v in sorted(by_p[rp['idx']],key=candidate_rank)[:5]),
-            calon_nama=name_hint(by_p[rp['idx']],'NIB'))
+            calon_nama=name_hint(by_p[rp['idx']],'NIB'),
+            skor_gabungan=best2_p.get(rp['idx']))
         p_level2.append(nr)
     level1=[]
     for match in clean:
         rb=refb[match['record_bpn']];rp=refp[match['record_pbb']]
         level1.append(level1_record(rb,rp,match,'RULE',names_used=names_used))
-    return level1,b_level2,p_level2,pairs,clean
+    for match in stage2:
+        rb=refb[match['record_bpn']];rp=refp[match['record_pbb']]
+        level1.append(level1_record(rb,rp,match,'RULE_NAMA'))
+    return level1,b_level2,p_level2,pairs,clean+stage2
+
+
+def name_stage(b,p,pairs,seen_b,seen_p,opts,pmode,progress=NO_PROGRESS):
+    """Tahap 2: Level 2 records re-examined within a buffer using names.
+
+    Only records left unmatched by stage 1 and free of identity failures
+    (``logic.STAGE2_BLOCKED``) take part. Candidates within ``stage2_buffer`` metres
+    get ``skor_spasial`` and ``skor_gabungan`` (``logic.combined_score``);
+    ``logic.select_stage2`` keeps strict 1:1 winners. Stage-1 rows in ``pairs``
+    are updated in place, new (non-intersecting) candidates are appended.
+    Accepted rows get ``status=LEVEL_1`` and ``metode_padu=RULE_NAMA``.
+    """
+    o=dict(STAGE2_DEFAULTS,**{k:v for k,v in opts.items() if v is not None})
+    buffer=float(o['stage2_buffer'] or 0.)
+    def free(rows,taken):
+        return [r for r in rows if r['idx'] not in taken and r['a']['_id_field_value']
+                and r['a']['_id_count']==1 and not r['geom'].isNull() and not r['geom'].isEmpty()]
+    eb=free(b,seen_b);ep=free(p,seen_p)
+    if not eb or not ep:return []
+    rows=make_candidate_rows(eb,ep,opts['min_irisan'],radius=max(buffer,1e-6),
+                             point_tol=buffer,
+                             name_thresholds=(opts.get('name_match',90.),opts.get('name_partial',60.)),
+                             progress=progress)
+    known={r['pair_id']:r for r in pairs}
+    scored=[]
+    weights=(o['w_name'],o['w_spatial'],o['w_area'])
+    for row in rows:
+        linked=_is_strong_near(row,opts['min_irisan'])
+        if not linked and row['jarak_geometri']>buffer:continue
+        target=known.get(row['pair_id'])
+        if target is None:
+            row['status']='LEVEL_2'
+            row['alasan']='TITIK_DI_LUAR_BIDANG' if pmode else 'TIDAK_ADA_IRISAN'
+            row['kekuatan']=''
+            pairs.append(row);target=row
+        spatial=spatial_score(target['jarak_geometri'],buffer,linked)
+        target['skor_spasial']=round(spatial,1)
+        target['skor_gabungan']=combined_score(target['skor_nama'],spatial,
+                                               target['kesamaan_luas_tulis'],weights)
+        scored.append(target)
+    accepted=select_stage2(scored,o['stage2_min'],o['stage2_min_name'],o['stage2_margin'])
+    for r in accepted:
+        r['status']='LEVEL_1';r['metode_padu']='RULE_NAMA';r['alasan']=''
+        # Weaker spatial evidence than stage 1: strength judged as for points.
+        r['kekuatan']=match_strength(r['valid_nama'],True)
+    return accepted
 
 
 def level1_record(rb,rp,match,method,score=None,names_used=True):
@@ -503,7 +679,8 @@ def level1_record(rb,rp,match,method,score=None,names_used=True):
                   'kesamaan_pct':match['kesamaan_luas_tulis'],
                   'skor_nama':match.get('skor_nama'),
                   'valid_nama':match.get('valid_nama'),
-                  'kekuatan':match['kekuatan']})
+                  'kekuatan':match['kekuatan'],
+                  'skor_gabungan':match.get('skor_gabungan')})
     if score is not None:attrs['skor_ai']=score
     attrs.update({('pbb_'+k):v for k,v in rp['a'].items() if not k.startswith('_')})
     return {'idx':rb['idx'],'fid':rb['fid'],'a':attrs,'geom':rb['geom']}
@@ -514,6 +691,10 @@ FEATURE_NAMES = ['overlap_bpn_pct','overlap_pbb_pct','iou','kesamaan_luas_geom',
                 'bpn_luas_kosong','pbb_luas_kosong','bpn_invalid','pbb_invalid',
                 'bpn_internal_overlap','pbb_internal_overlap',
                 'jumlah_calon_radius_bpn','jumlah_calon_radius_pbb']
+# V2 (v0.9.6): the 18 features plus name evidence, used when Modul 4 gets name columns.
+NAME_FEATURE_NAMES = ['skor_nama','nama_tidak_dinilai']
+FEATURE_VERSIONS = {'QGIS_PLUGIN_V1':FEATURE_NAMES,
+                    'QGIS_PLUGIN_V2':FEATURE_NAMES+NAME_FEATURE_NAMES}
 
 
 def layer_fingerprint(layer):

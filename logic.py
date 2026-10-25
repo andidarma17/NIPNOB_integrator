@@ -188,6 +188,77 @@ def match_strength(name_state, point_mode):
     return 'SEDANG' if name_state == 'TIDAK_COCOK' else 'KUAT'
 
 
+# ---------------------------------------------------------------------------
+# Tahap 2: Level 2 rescued by a buffer search + combined (name/spatial/area) score
+# ---------------------------------------------------------------------------
+# Identity failures are never rescued by a name.
+STAGE2_BLOCKED = frozenset(('NIB_KOSONG', 'NOP_KOSONG', 'NIB_DUPLIKAT', 'NOP_DUPLIKAT'))
+STAGE2_DEFAULTS = {'stage2_buffer': 5., 'w_name': .60, 'w_spatial': .25, 'w_area': .15,
+                   'stage2_min': 80., 'stage2_min_name': 60., 'stage2_margin': 10.}
+
+
+def spatial_score(distance, buffer, linked=False):
+    """0-100: 100 when the records touch (irisan / titik di dalam), falling
+    linearly to 0 at the buffer edge."""
+    if linked:
+        return 100.
+    if distance is None or buffer is None or buffer <= 0:
+        return 0.
+    return max(0., 100. * (1 - distance / buffer))
+
+
+def combined_score(name_score, spatial, area_sim, weights=(.60, .25, .15)):
+    """Weighted mean of name, spatial and written-area similarity (0-100).
+
+    Weights need not sum to 1. Without an assessable name there is no score:
+    the second stage exists to let the name decide, never distance alone.
+    """
+    if name_score is None:
+        return None
+    wn, ws, wl = (max(0., float(w or 0)) for w in weights)
+    total = wn + ws + wl
+    if total <= 0:
+        return None
+    return round((wn * name_score + ws * (spatial or 0.) + wl * (area_sim or 0.)) / total, 1)
+
+
+def select_stage2(rows, min_score=80., min_name=60., margin=10.):
+    """Pick 1:1 pairs from scored rows (``skor_gabungan``, ``skor_nama``).
+
+    A row is accepted only when it reaches ``min_score`` and ``min_name`` and it
+    is the best candidate of BOTH its BPN and its PBB record, ahead of the
+    runner-up on either side by at least ``margin`` points. Every row receives
+    ``alasan_tahap2`` (empty when accepted). Returns the accepted rows.
+    """
+    def best_of(key):
+        groups = {}
+        for r in rows:
+            if r.get('skor_gabungan') is not None:
+                groups.setdefault(r[key], []).append(r)
+        return {k: sorted(v, key=lambda x: -x['skor_gabungan']) for k, v in groups.items()}
+    by_b, by_p = best_of('record_bpn'), best_of('record_pbb')
+    accepted = []
+    for r in rows:
+        score = r.get('skor_gabungan')
+        reasons = []
+        if score is None:
+            reasons.append('NAMA_TIDAK_DINILAI')
+        else:
+            if score < min_score: reasons.append('SKOR_GABUNGAN_KURANG')
+            if (r.get('skor_nama') or 0) < min_name: reasons.append('SKOR_NAMA_KURANG')
+            for group in (by_b[r['record_bpn']], by_p[r['record_pbb']]):
+                if group[0] is not r:
+                    reasons.append('BUKAN_KANDIDAT_TERBAIK')
+                    break
+                if len(group) > 1 and score - group[1]['skor_gabungan'] < margin:
+                    reasons.append('SELISIH_SKOR_KURANG')
+                    break
+        r['alasan_tahap2'] = ';'.join(reasons)
+        if not reasons:
+            accepted.append(r)
+    return accepted
+
+
 def normalize_verified_label(row):
     """Never convert an unresolved Level 2 into negative label 0."""
     label = str(row.get('label','')).strip()

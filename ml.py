@@ -6,7 +6,7 @@ import json
 import math
 from collections import Counter
 from pathlib import Path
-from .engine import FEATURE_NAMES, make_candidate_rows, prepare_local
+from .engine import FEATURE_NAMES, FEATURE_VERSIONS, make_candidate_rows, prepare_local
 from .logic import normalize_verified_label
 
 
@@ -16,9 +16,14 @@ def csv_rows(path):
         return list(csv.DictReader(f))
 
 
-def feature_vector(row):
+def feature_version(names_used):
+    """'QGIS_PLUGIN_V2' (with name features) when name columns are used."""
+    return 'QGIS_PLUGIN_V2' if names_used else 'QGIS_PLUGIN_V1'
+
+
+def feature_vector(row, features=FEATURE_NAMES):
     vals=[]
-    for field in FEATURE_NAMES:
+    for field in features:
         try:
             v=row.get(field)
             vals.append(float(v) if v not in (None,'','None') else float('nan'))
@@ -39,16 +44,26 @@ def geometry_mode(rows):
 
 
 def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
-                     historical_candidates=None):
-    """CSV rows keyed by pair_id/record ids/NIB+NOP; labels GOLD require evidence."""
+                     historical_candidates=None, name_silver_weight=None):
+    """CSV rows keyed by pair_id/record ids/NIB+NOP; labels GOLD require evidence.
+
+    Tahap 2 pairs (``metode_padu=RULE_NAMA``) are silver only when
+    ``name_silver_weight`` is given, as ``SILVER_RULE_NAMA`` with that weight.
+    """
     ref={r['pair_id']:r for r in candidates}
     gold=[];silver=[];unresolved=[]
     if silver_csv:
         existing=csv_rows(silver_csv)
         for s in existing:
             if str(s.get('status','')).upper() not in ('LEVEL_1','LEVEL 1','1'):continue
+            by_name=str(s.get('metode_padu','')).upper()=='RULE_NAMA'
+            # Tahap 2 pairs rest on names: opt-in, with their own (lower) weight.
+            if by_name and name_silver_weight is None:continue
             r=ref.get(s.get('pair_id'))
-            if r:
+            if r and by_name:
+                silver.append(dict(r,label=1,label_source='SILVER_RULE_NAMA',
+                                   sample_weight=float(name_silver_weight)))
+            elif r:
                 silver.append(dict(r,label=1,label_source='SILVER_RULE',sample_weight=.2))
         chosen={r['pair_id'] for r in silver}
         accepted_b={r['record_bpn'] for r in silver}
@@ -85,14 +100,14 @@ def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
     return silver,gold,unresolved
 
 
-def add_historical_labeled_features(gold, path):
+def add_historical_labeled_features(gold, path, features=FEATURE_NAMES):
     """Use a labelled feature CSV from another geography, if feature schema matches."""
     if not path:return 0
     good=0
     for entry in csv_rows(path):
         label=normalize_verified_label(entry)
         if label is None:continue
-        if not all(k in entry for k in FEATURE_NAMES):
+        if not all(k in entry for k in features):
             raise ValueError('CSV historis harus memiliki seluruh nama fitur dari Modul 4.')
         gold.append(dict(entry,label=label,label_source='GOLD_HISTORICAL',
                          sample_weight=1.,group_id=entry.get('wilayah','') or ('HIST_TILE_%s_%s' %
@@ -160,12 +175,14 @@ def split_verified(gold,seed=42):
     return None
 
 
-def train_model(silver, gold, output_dir, min_precision=.99):
+def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGIN_V1'):
     """Fit models and evaluate BOTH on independent, spatially separated GOLD splits.
 
     Threshold 0.90 is an inference policy candidate, not an optimized threshold.
     Selection is VALIDATION-only. Never use testing to tune the selected model.
+    ``version`` picks the feature set (``engine.FEATURE_VERSIONS``).
     """
+    features=FEATURE_VERSIONS[version]
     import joblib
     import numpy as np
     from sklearn.ensemble import RandomForestClassifier
@@ -203,7 +220,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
     except ImportError:
         pass
 
-    xx=np.asarray([feature_vector(r) for r in fit],dtype=float)
+    xx=np.asarray([feature_vector(r,features) for r in fit],dtype=float)
     yy=np.asarray([int(r['label']) for r in fit],dtype=int)
     weight=np.asarray([float(r.get('sample_weight',1)) for r in fit],dtype=float)
     cutoff=.90
@@ -220,7 +237,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
         per_split={}
         for stage, subset in [('TRAIN', fit),('VALIDATION',val),('TEST',test)]:
             if not subset:continue
-            score=model.predict_proba(np.asarray([feature_vector(r) for r in subset],dtype=float))[:,1]
+            score=model.predict_proba(np.asarray([feature_vector(r,features) for r in subset],dtype=float))[:,1]
             truth=[int(r['label']) for r in subset]
             ev=metrics_from_gold(truth,score,threshold=cutoff,
                 include_curves=(stage=='TEST'))
@@ -243,7 +260,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
             importance=native.feature_importances_
             feature_importance=sorted([
                 {'fitur':str(k),'importance':float(v)}
-                for k,v in zip(FEATURE_NAMES, importance)],
+                for k,v in zip(features, importance)],
                 key=lambda x:-x['importance'])
         except (AttributeError,TypeError,ValueError):
             feature_importance=[]
@@ -289,7 +306,7 @@ def train_model(silver, gold, output_dir, min_precision=.99):
     joblib.dump(selected,modelpath)
     (Path(output_dir)/'evaluasi_testing_ai.json').write_text(
         json.dumps(evaluation,ensure_ascii=False,indent=2,allow_nan=False),encoding='utf-8')
-    metadata={'status':status,'feature_version':'QGIS_PLUGIN_V1','features':FEATURE_NAMES,
+    metadata={'status':status,'feature_version':version,'features':features,
               'mode_geometri_pbb':geom_mode,
               'algorithm':best_name,'n_silver':len(silver),'n_gold':len(gold),
               'n_training':len(fit),'n_validation':len(val),'n_testing':len(test),
@@ -306,8 +323,13 @@ def predict(candidates, model_file, metadata_file):
     import joblib
     import numpy as np
     metadata=json.loads(Path(metadata_file).read_text(encoding='utf-8'))
-    if metadata.get('features')!=FEATURE_NAMES or metadata.get('feature_version')!='QGIS_PLUGIN_V1':
+    version=metadata.get('feature_version')
+    features=FEATURE_VERSIONS.get(version)
+    if features is None or metadata.get('features')!=features:
         raise ValueError('Skema fitur model berbeda dari versi plugin saat ini.')
+    if version=='QGIS_PLUGIN_V2' and candidates and all(r.get('skor_nama') is None for r in candidates):
+        raise ValueError('Model dilatih dengan fitur nama. Pilih kolom nama BPN dan PBB '
+                         'yang berisi nama, atau gunakan model tanpa fitur nama.')
     # Polygon and point candidates encode overlap/area features differently.
     trained=str(metadata.get('mode_geometri_pbb') or 'POLIGON').upper()
     current=geometry_mode(candidates) if candidates else trained
@@ -317,7 +339,7 @@ def predict(candidates, model_file, metadata_file):
                          (trained.lower(),current.lower()))
     # Python pickle-based joblib is unsafe from untrusted sources.
     model=joblib.load(model_file)
-    matrix=np.asarray([feature_vector(r) for r in candidates],dtype=float)
+    matrix=np.asarray([feature_vector(r,features) for r in candidates],dtype=float)
     probs=model.predict_proba(matrix)[:,1] if candidates else []
     for row,score in zip(candidates,probs):row['skor_ai']=float(score)
     return metadata

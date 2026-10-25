@@ -47,7 +47,7 @@ Palet D Indigo–Safron kembali menjadi token aktif berdasarkan acuan visual ter
 3. **Font tunggal: `DejaVu Sans`** (reguler + bold). Tidak ada italic, tidak ada font lain. Pada macOS/Windows DejaVu mungkin tidak terpasang → Qt melakukan fallback tanpa pemberitahuan (laporan uji macOS di `PERBAIKAN_PDF_MACOS.txt`). Jika font diganti, **embed/bundle font di folder plugin** dan muat dengan `QFontDatabase.addApplicationFont`.
 4. **Pembungkus teks memakai jumlah karakter** (`textwrap.wrap(width=…)`), bukan metrik font. Mengganti font/ukuran akan menggeser pembungkusan → harus diganti dengan `QFontMetrics`.
 5. **Sel tabel dipotong** dengan `[:n-2]+'..'` berdasarkan perkiraan lebar (`lebar/8.4` karakter). Tidak ada wrap multi-baris di tabel.
-6. **Peta** digambar dari geometri aktual (hanya *outer ring*, maks. 4000 fitur per layer, simplifikasi tiap 800 titik) **tanpa basemap**, tanpa skala/panah utara/CRS.
+6. **Peta** digambar dari geometri aktual (seluruh fitur digambar sejak 0.9.6; legenda = jumlah fitur sebenarnya di dalam batas peta; simplifikasi tiap 800 titik dan verteks < 0,3 px dilewati) **tanpa basemap**, tanpa skala/panah utara/CRS.
 7. **Data = hasil eksekusi saat itu.** Laporan harus tetap layak ketika: tidak ada gap, tidak ada model AI, tidak ada GOLD test, 0 overlap, 0 keputusan studio, kolom luas bertipe teks (lihat `ACCEPTANCE_TEST.md` poin 8). Setiap grafik wajib punya *empty state* yang menjelaskan alasan.
 8. **Tidak ada PNG terpisah** dan tidak ada dependensi tambahan di lingkungan QGIS. Satu PDF per modul (`laporan_modulN.pdf`).
 9. Cetak hitam-putih/fotokopi lazim di lingkungan kerja ini → informasi tidak boleh hanya dibedakan lewat warna.

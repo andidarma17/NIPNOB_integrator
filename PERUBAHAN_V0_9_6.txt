@@ -1,0 +1,45 @@
+NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
+
+- Modul 3, 3.1 dan 5: opsi baru "Tahap 2: cari ulang padanan Level 2 dalam buffer dengan
+  skor nama" (bawaan mati; memerlukan kolom nama BPN dan PBB).
+- Tahap 1 (aturan lama) tidak berubah. Tahap 2 hanya memproses rekaman yang tersisa
+  Level 2, kecuali NIB/NOP kosong atau duplikat.
+- Kandidat tahap 2: PBB beririsan / di dalam bidang atau berjarak <= buffer
+  (Modul 3 bawaan 5 m; Modul 3.1 memakai toleransi titik).
+- skor_gabungan = 0,60 nama + 0,25 spasial + 0,15 kesamaan luas tertulis (bobot diatur).
+  Lolos bila skor gabungan >= 80, skor nama >= 60, unggul >= 10 poin dari kandidat ke-2
+  di sisi BPN dan PBB, dan 1:1.
+- Pasangan lolos masuk 01_padanan_level1 dengan metode_padu=RULE_NAMA; kekuatan
+  KUAT (nama cocok) / SEDANG (nama mirip).
+- Kolom baru skor_gabungan pada Level 1 dan Level 2; pasangan_kandidat.csv menambah
+  skor_spasial, skor_gabungan, alasan_tahap2, metode_padu.
+- PDF Modul 3/3.1: ringkasan jumlah Level 1 tahap 1 vs tahap 2, catatan parameter
+  tahap 2, kolom "Tahap" pada tabel kekuatan.
+- Modul 5: opsi tahap 2 yang sama (buffer sendiri, bawaan 5 m) dijalankan pada baseline
+  sebelum promosi AI; tambahan AI kini bermetode AI_VERIFIED juga di CSV.
+- Modul 4: kolom nama opsional (juga pada layer historis). Dengan nama, model memakai
+  versi fitur QGIS_PLUGIN_V2 = 18 fitur + skor_nama + nama_tidak_dinilai. Model V1 lama
+  tetap dapat dipakai di Modul 5; model V2 menolak data tanpa kolom nama.
+- Modul 4: opsi "Sertakan padanan tahap 2 (RULE_NAMA) sebagai silver" (bawaan mati),
+  label_source SILVER_RULE_NAMA dengan bobot bawaan 0,1.
+- Gap tertutup BPN: jumlah gap tidak lagi menghentikan proses ("Terlalu banyak celah
+  tertutup"); ambang 2.500 menjadi ambang peringatan dan hanya menghitung gap >= luas
+  minimum (dulu serpihan kecil ikut dihitung).
+- Gap disimpan sebagai layer kandidat tersendiri (Modul 2: bpn_kandidat_gap; Modul
+  3/3.1: 04_kandidat_gap) dengan luas_m2 dan status_periksa (LAYAK_PERIKSA /
+  DI_BAWAH_MINIMUM). Gap tidak lagi ditambahkan ke layer BPN.
+- Modul 3/3.1/5 memadukan bidang BPN sumber. Dulu gap otomatis masuk sebagai BPN tanpa
+  NIB sehingga menambah Level 2 NIB_KOSONG dan dapat memicu MULTI_NIB pada padanan sah.
+  Opsi baru Modul 3/3.1 "Sertakan kandidat gap BPN sebagai petunjuk" (bawaan mati):
+  PBB Level 2 di atas gap diberi kode PBB_DI_ATAS_GAP dan calon_gap.
+- Laporan Modul 2/3/3.1: gap terdeteksi, memenuhi luas minimum, diproses, dan status
+  pemeriksaan (LENGKAP / TIDAK LENGKAP).
+- Jendela progres dengan tombol Batal pada semua modul. Batal saat tahap gap: gap
+  berhenti (TIDAK LENGKAP), modul lanjut. Batal di tahap lain: tanpa keluaran.
+- Peta PDF: seluruh fitur digambar (dulu maks 4000 per kategori, sehingga legenda
+  menulis 4000 dan peta terpotong). Angka legenda = jumlah fitur sebenarnya di dalam
+  batas peta. Bingkai peta mengikuti proporsi data (tidak ada lagi pita sempit di
+  bingkai tinggi), perbesaran lokasi gap memakai margin 2x ukuran gap (dulu 9x),
+  koordinat sudut dipindah ke bawah bingkai dan panah utara diberi latar putih.
+- Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2, versi fitur nama,
+  silver RULE_NAMA, gap tanpa batas jumlah + batal sebagian + petunjuk PBB di atas gap.
