@@ -589,9 +589,10 @@ class Report:
             self.p.drawEllipse(QPointF(float(xp),float(yp)),1.6,1.6)
         self.p.setBrush(QBrush());self.y=bottom+65
         self.text('X: '+xlabel+'; Y: '+ylabel+'. Setiap titik mewakili satu calon pasangan.',9,color=MUTED)
-    def map(self, datasets, title='', focus=None, max_features=4000):
+    def map(self, datasets, title='', focus=None):
         """datasets: [(records, QColor/string, predicate, label), ...]
         Geometry visualisation uses the original planar coordinates, without basemap.
+        Every feature is drawn, so legend counts are the real counts within the map.
         """
         self.sub(title)
         valid=[];bbox=[];group_counts=[];group_points=[]
@@ -607,7 +608,6 @@ class Report:
                 valid.append((g,colour,role,edge));bbox.append(bb)
                 points=points and _point_parts(g) is not None
                 count+=1
-                if count>=max_features:break
             group_counts.append(count);group_points.append(points)
         if not valid:self.no_data('Tidak ada geometri untuk batas peta ini.');return
         self.y+=10
@@ -648,8 +648,10 @@ class Report:
         dx=max(x1-x0,.001);dy=max(y1-y0,.001)
         padx=.025*dx;pady=.025*dy;x0-=padx;x1+=padx;y0-=pady;y1+=pady
         dx=x1-x0;dy=y1-y0
-        top=self.y+15;bottom=min(self.bottom-128,top+740)
         left=self.l+15;right=self.w-self.r-20
+        # Frame follows the data's aspect ratio, so wide data is not shown as a
+        # thin band inside a tall empty frame.
+        top=self.y+15;bottom=int(min(self.bottom-128,top+740,top+max(300,(right-left)*dy/dx)))
         self.p.fillRect(int(left),int(top),int(right-left),int(bottom-top),QColor('#FCFCFE'))
         self.p.setPen(QPen(GRID));self.p.drawRect(int(left),int(top),int(right-left),int(bottom-top))
         scale=min((right-left)/dx,(bottom-top)/dy)
@@ -690,7 +692,13 @@ class Report:
                 for ring in poly:
                     if len(ring)<3:continue
                     step=max(1,len(ring)//800)
-                    points=[xy(point) for point in ring[::step]]
+                    points=[]
+                    for point in ring[::step]:
+                        # Skip vertices within ~0.3 px of the previous one: invisible
+                        # in print, but they bloat the PDF when every feature is drawn.
+                        q=xy(point)
+                        if points and abs(q.x()-points[-1].x())+abs(q.y()-points[-1].y())<.3:continue
+                        points.append(q)
                     if len(points)<3:continue
                     path.moveTo(points[0])
                     for point in points[1:]:path.lineTo(point)
@@ -716,7 +724,14 @@ class Report:
         bar_metres=min((unit*power for unit in (1,2,5,10)),
                        key=lambda value:abs(value-target_metres))
         bar_px=bar_metres*scale
-        sx=left;sy=bottom+22
+        # Corner coordinates sit under the frame: the map now fills the frame,
+        # so text inside it would cover features.
+        self.font(9);self.p.setPen(QPen(MUTED))
+        self.p.drawText(int(left),int(bottom+16),'Kiri bawah: E %.1f · N %.1f'%(x0,y0))
+        upper='Kanan atas: E %.1f · N %.1f'%(x1,y1)
+        uw=QFontMetrics(self.p.font()).horizontalAdvance(upper)
+        self.p.drawText(int(right-uw),int(bottom+16),upper)
+        sx=left;sy=bottom+28
         self.p.setPen(QPen(NAVY,1))
         self.p.fillRect(int(sx),int(sy),int(bar_px/2),8,NAVY)
         self.p.drawRect(int(sx),int(sy),int(bar_px),8)
@@ -725,18 +740,17 @@ class Report:
         self.p.drawText(int(sx+bar_px-10),int(sy+25),'%g m'%bar_metres)
         crs_label='CRS peta: '+str(self.crs) if self.crs else 'CRS peta: tidak tercatat'
         self.p.drawText(int(right-245),int(sy+25),crs_label)
+        # North arrow on a white plate so it stays legible over features.
+        backing=QColor('#FFFFFF');backing.setAlpha(225)
+        self.p.fillRect(int(right-36),int(top+4),28,54,backing)
         self.p.setPen(QPen(NAVY,1.5))
         self.p.drawLine(int(right-22),int(top+52),int(right-22),int(top+22))
         self.p.drawLine(int(right-22),int(top+22),int(right-28),int(top+31))
         self.p.drawLine(int(right-22),int(top+22),int(right-16),int(top+31))
         self.font(9,True);self.p.drawText(int(right-27),int(top+18),'U')
-        self.font(9);self.p.setPen(QPen(MUTED))
-        self.p.drawText(int(left+4),int(bottom-8),'E %.1f · N %.1f'%(x0,y0))
-        upper='E %.1f · N %.1f'%(x1,y1)
-        uw=QFontMetrics(self.p.font()).horizontalAdvance(upper)
-        self.p.drawText(int(right-uw-4),int(bottom-8),upper)
-        self.y=bottom+72
-        self.text('Peta indikatif tanpa peta dasar. Legenda menghitung fitur yang digambar (maksimal %d per kategori). Periksa batas dan lokasi pada layer QGIS.'%max_features,9,color=MUTED)
+        self.y=bottom+78
+        self.text('Peta indikatif tanpa peta dasar. Angka pada legenda = jumlah fitur kategori tersebut '
+                  'di dalam batas peta. Periksa batas dan lokasi pada layer QGIS.',9,color=MUTED)
         if marked_small:
             self.text('Lingkaran menandai lokasi kategori yang disorot; ukurannya tidak menyatakan luas bidang.',9,color=MUTED)
     def close(self):
@@ -1024,7 +1038,8 @@ def report2(folder,b_rows,p_rows,stats,notes,overlap_b,overlap_p,gaps,crs=None,m
     newg=eligible
     if newg:
         biggest=max(newg,key=lambda z:z['geom'].area())['geom'].boundingBox()
-        margin=max(biggest.width(),biggest.height())*9
+        # Gap plus about two gap-widths of surrounding parcels on each side.
+        margin=max(biggest.width(),biggest.height(),10.)*2
         from qgis.core import QgsRectangle
         focus=QgsRectangle(biggest.xMinimum()-margin,biggest.yMinimum()-margin,biggest.xMaximum()+margin,biggest.yMaximum()+margin)
         r.start('Lokasi kandidat gap BPN')

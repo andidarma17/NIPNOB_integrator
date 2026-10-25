@@ -36,7 +36,7 @@ Keterbatasan verifikasi: render memakai geometri palsu sederhana; peta dan angka
 | T7 | Pembungkus teks | Berbasis jumlah karakter; tabel memotong sel (`..`) |
 | T8 | M6 PDF | Tabel keputusan dibatasi 30 baris; kolom operator/waktu/catatan tidak tampil |
 | T9 | M3 PDF | Histogram overlap memakai batas bin tetap, padahal ambang dapat diubah |
-| T10 | Kinerja | Proses sinkron di UI thread (QGIS bisa "tidak merespons"); `max_gaps=2500`; peta PDF maks 4000 fitur |
+| T10 | Kinerja | Proses sinkron di UI thread (QGIS bisa "tidak merespons"); gap tanpa batas jumlah (ambang peringatan 2500) dengan progres + Batal; peta PDF menggambar seluruh fitur |
 | T11 | Keamanan | `.joblib` = pickle → hanya model tepercaya (sudah diperingatkan di UI & README) |
 | T12 | `dialogs.run1/run2/run4` | Variabel `charts` dihitung tetapi tidak dipakai laporan baru (sisa laporan lama) |
 | T13 | Peta | Hanya *outer ring*; lubang tak digambar (`# holes not coloured`) |

@@ -36,5 +36,10 @@ NIB-NOP INTEGRATOR v0.9.6 - PEMADANAN TAHAP 2 (BUFFER + SKOR NAMA)
   pemeriksaan (LENGKAP / TIDAK LENGKAP).
 - Jendela progres dengan tombol Batal pada semua modul. Batal saat tahap gap: gap
   berhenti (TIDAK LENGKAP), modul lanjut. Batal di tahap lain: tanpa keluaran.
+- Peta PDF: seluruh fitur digambar (dulu maks 4000 per kategori, sehingga legenda
+  menulis 4000 dan peta terpotong). Angka legenda = jumlah fitur sebenarnya di dalam
+  batas peta. Bingkai peta mengikuti proporsi data (tidak ada lagi pita sempit di
+  bingkai tinggi), perbesaran lokasi gap memakai margin 2x ukuran gap (dulu 9x),
+  koordinat sudut dipindah ke bawah bingkai dan panah utara diberi latar putih.
 - Uji unit baru: skor spasial, skor gabungan, seleksi 1:1 tahap 2, versi fitur nama,
   silver RULE_NAMA, gap tanpa batas jumlah + batal sebagian + petunjuk PBB di atas gap.
