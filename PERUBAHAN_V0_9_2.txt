@@ -1,0 +1,18 @@
+NIB-NOP Integrator v0.9.2 (BETA)
+Tanggal: 2026-10-20
+
+PERBAIKAN:
+- Dropdown NIB, NOP, luas tertulis di semua modul menampilkan seluruh nama kolom, tanpa filter jenis data.
+- Pengisian pilihan otomatis untuk NIB/LUAS dan D_NOP/D_LUAS jika ada.
+- Pemilihan manual dipertahankan ketika field diperbarui dan masih ada.
+- Mengganti layer memperbarui semua kolom secara otomatis.
+- Tool 6 Verifikasi Studio turut diperbaiki.
+- Algoritma QA, matching, dan AI tidak diubah.
+
+INSTAL:
+QGIS > Plugins > Manage and Install Plugins > Install from ZIP.
+Pilih ZIP v0.9.2, bukan folder sumber. Restart QGIS setelah instalasi.
+
+STATUS:
+Unit test dropdown, sintaks kode dan kelengkapan paket ZIP lolos.
+Belum dilakukan uji GUI langsung QGIS 3/4 pada lingkungan pengembangan ini.
