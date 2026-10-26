@@ -21,6 +21,22 @@ def field_type(kind):
         return getattr(QVariant, kind)
 
 
+def layer_filter(*kinds):
+    """Layer combo filter, e.g. layer_filter('PolygonLayer','PointLayer').
+
+    Qgis.LayerFilter on QGIS 3.34+/4, QgsMapLayerProxyModel.Filter before.
+    """
+    try:
+        from qgis.core import Qgis
+        enum = Qgis.LayerFilter
+    except (ImportError, AttributeError):
+        from qgis.core import QgsMapLayerProxyModel as enum
+    flags = getattr(enum, kinds[0])
+    for kind in kinds[1:]:
+        flags = flags | getattr(enum, kind)
+    return flags
+
+
 def user_role():
     try:
         return Qt.ItemDataRole.UserRole

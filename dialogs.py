@@ -18,6 +18,7 @@ from .storage import FORMATS,save_layer,zip_csv
 from .reporting_full import report1,report2,report3,report3_1,report5
 from .logic import ident
 from .fieldwidgets import LayerFieldComboBox
+from .compat import layer_filter
 
 
 LEVEL2_EXTRA=[('geom_kosong','Int'),('geom_invalid','Int'),('geom_fixed','Int'),
@@ -78,12 +79,15 @@ def name_notes(options,pmode):
 
 class Selector(QWidget):
     """Layer + unrestricted attribute-field selectors used in Tools 1 to 5."""
-    def __init__(self,label,with_area=True, optional=False, with_name=False):
+    def __init__(self,label,with_area=True, optional=False, with_name=False,
+                 kinds=('PolygonLayer','PointLayer')):
         super().__init__()
         layout=QFormLayout(self)
         self.label=label
         theme = 'pbb' if 'pbb' in label.lower() else 'bpn'
         self.layer=QgsMapLayerComboBox()
+        # Only vector layers of the expected geometry; a raster has no fields.
+        self.layer.setFilters(layer_filter(*kinds))
         self.id=LayerFieldComboBox(theme, 'identity')
         self.area=LayerFieldComboBox(theme, 'area') if with_area else None
         self.name=LayerFieldComboBox(theme, 'name', optional=True) if with_name else None
@@ -175,8 +179,9 @@ class ToolDialog(QDialog):
         names=modul in (3,31,4,5)
         pbb_label={3:'Layer PBB (poligon):',31:'Layer PBB (titik NOP):'}.get(
             modul,'Layer PBB (poligon atau titik):')
-        self.bpn=Selector('Layer BPN (poligon):',with_name=names)
-        self.pbb=Selector(pbb_label,with_name=names)
+        pbb_kinds={3:('PolygonLayer',),31:('PointLayer',)}.get(modul,('PolygonLayer','PointLayer'))
+        self.bpn=Selector('Layer BPN (poligon):',with_name=names,kinds=('PolygonLayer',))
+        self.pbb=Selector(pbb_label,with_name=names,kinds=pbb_kinds)
         if modul!=4:
             self.panel.addWidget(self.bpn);self.panel.addWidget(self.pbb)
         else:
@@ -284,7 +289,7 @@ class ToolDialog(QDialog):
             self.gold_operator=self.filepick('CSV label operator pada layer yang dipilih (opsional):')
             self.hist_toggle=QCheckBox('Gunakan pasangan GeoJSON historis + CSV label (opsional)')
             self.param_form.addRow(self.hist_toggle)
-            self.hist_bpn=Selector('BPN historis:',with_name=True)
+            self.hist_bpn=Selector('BPN historis:',with_name=True,kinds=('PolygonLayer',))
             self.hist_pbb=Selector('PBB historis:',with_name=True)
             self.hist_bpn.setVisible(False);self.hist_pbb.setVisible(False)
             self.panel.addWidget(self.hist_bpn);self.panel.addWidget(self.hist_pbb)

@@ -86,7 +86,8 @@ class LayerFieldComboBox(QComboBox):
                      self.currentIndex() == 0 and self.currentText() == NONE_LABEL)
         layer = self._layer
         names = []
-        if layer is not None and hasattr(layer, 'isValid') and layer.isValid():
+        # A raster/mesh layer (no fields()) gives an empty list, not a crash.
+        if layer is not None and hasattr(layer, 'fields') and hasattr(layer, 'isValid') and layer.isValid():
             names = [field.name() for field in layer.fields()]
         self.blockSignals(True)
         try:

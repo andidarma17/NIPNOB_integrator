@@ -54,7 +54,17 @@ spec = importlib.util.spec_from_file_location('nibnop_fieldwidgets_under_test',p
 fieldwidgets=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fieldwidgets)
 
+class StubRasterLayer:
+    """Like QgsRasterLayer: valid, but without fields()."""
+    def isValid(self): return True
+
 class DropdownTests(unittest.TestCase):
+    def test_raster_layer_gives_empty_disabled_dropdown(self):
+        widget=fieldwidgets.LayerFieldComboBox('bpn','identity')
+        widget.setLayer(StubRasterLayer())
+        self.assertEqual(widget.currentField(),'')
+        self.assertFalse(widget.enabled)
+
     def test_default_fields_and_all_field_types(self):
         layer=StubLayer([('NIB','String'),('LUAS','String'),('alamat','String'),('tanggal','Date'),('indeks', 'Int')])
         widget=fieldwidgets.LayerFieldComboBox('bpn','area')

@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (QDockWidget,QWidget,QVBoxLayout,QFormLayout,
 from .engine import read_pair,prepare_local,make_candidate_rows,fix_geometry,layer_fingerprint
 from .logic import ident,name_similarity,name_status
 from .fieldwidgets import LayerFieldComboBox
+from .compat import layer_filter
 from .storage import zip_csv
 from .reporting_full import report6
 
@@ -52,6 +53,8 @@ class VerificationDock(QDockWidget):
         layout=QVBoxLayout(wrapper)
         form=QFormLayout()
         self.bpn=QgsMapLayerComboBox();self.pbb=QgsMapLayerComboBox()
+        self.bpn.setFilters(layer_filter('PolygonLayer'))
+        self.pbb.setFilters(layer_filter('PolygonLayer','PointLayer'))
         self.bpn_id=LayerFieldComboBox('bpn', 'identity')
         self.pbb_id=LayerFieldComboBox('pbb', 'identity')
         self.bpn_area=LayerFieldComboBox('bpn', 'area')
