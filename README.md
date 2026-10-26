@@ -1,4 +1,4 @@
-# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.6)
+# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.7)
 
 **Status:** implemented, compiled and unit-tested without QGIS; GUI, I/O and geometry processing require end-to-end validation within installed QGIS. **Do not yet use unattended on production land-tax records.**
 
@@ -31,6 +31,14 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 **Pembaruan 0.9.3 — Evaluasi AI Modul 4:** Modul 4 kini melaporkan seluruh metrik TRAIN / VALIDATION / TEST (GOLD independen), confusion matrix kedua model, kurva ROC, PR, kalibrasi, feature importance, batas bawah Wilson 95% Precision, panduan interpretasi ambang, dan rekomendasi otomatis. Seluruh gambar langsung masuk ke PDF `laporan_modul4.pdf`. Metrik TEST **tidak dibuat** bila GOLD independen tidak tersedia; laporan menulis BELUM DAPAT DINILAI. `rekap_csv.zip` menambahkan `metrik_train_validation_test.csv`, `feature_importance.csv`, `panduan_ambang_metrik.csv`, `penilaian_per_metrik.csv`, dan `rekomendasi_model.csv`. Model dan parameter aturan Modul 1–3 tidak berubah.
 
 **Memperbarui instalasi:** Nonaktifkan plugin lama di QGIS, gunakan **Plugins > Manage and Install Plugins > Install from ZIP** dengan paket v0.9.4, lalu restart QGIS. Jika QGIS tidak mengganti file versi lama, hapus instalasi plugin lama lewat manajer plugin sebelum memasang ulang. Jangan hapus atau timpa folder data hasil kerja operator.
+
+## Pembaruan v0.9.7 - Processing Toolbox
+
+Modul 1, 2, 3, 3.1, 4 dan 5 kini juga tersedia sebagai algoritma di **Processing Toolbox → NIB–NOP Integrator**. Algoritma memakai orkestrasi yang sama dengan dialog menu (`dialogs.run1…run5`), sehingga aturan, layer keluaran (`01_padanan_level1`, dst.), `rekap_csv.zip` dan laporan PDF identik. Manfaatnya: dapat dipakai di *Graphical Modeler*, *batch process*, skrip Python (`processing.run('nib_nop_integrator:modul_3_pemaduan_aturan', {...})`) dan `qgis_process`.
+
+* Parameter memakai nama dan nilai bawaan yang sama dengan dialog; folder hasil dan format layer (GeoPackage/GeoJSON/Shapefile) dipilih di akhir formulir.
+* Layer hasil dimuat ke proyek setelah algoritma selesai. Tombol **Cancel** Processing berperilaku seperti **Batal** di dialog.
+* Modul 6 (verifikasi studio) bersifat interaktif di peta dan tetap hanya di menu.
 
 ## Pembaruan v0.9.6 - Pemadanan tahap 2 (buffer + skor nama)
 

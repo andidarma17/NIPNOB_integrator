@@ -4,10 +4,22 @@ from qgis.PyQt.QtCore import Qt
 from .compat import QAction
 
 
+def _registry():
+    from qgis.core import QgsApplication
+    return QgsApplication.processingRegistry()
+
+
 class NibNopPlugin:
     def __init__(self,iface):
-        self.iface=iface;self.actions=[];self.dock=None
+        self.iface=iface;self.actions=[];self.dock=None;self.provider=None
+    def initProcessing(self):
+        # Called by QGIS (hasProcessingProvider=yes), also for qgis_process.
+        if self.provider is None:
+            from .processing_provider import NibNopProvider
+            self.provider=NibNopProvider()
+            _registry().addProvider(self.provider)
     def initGui(self):
+        self.initProcessing()
         self.menu=QMenu('NIB–NOP Integrator',self.iface.mainWindow())
         # Internal id 31 = Modul 3.1 (PBB titik NOP).
         names=[(1,'1. Pemeriksaan kelengkapan'),(2,'2. Kualitas spasial dan fix geometry'),
@@ -46,3 +58,6 @@ class NibNopPlugin:
         if getattr(self,'menu',None):
             self.iface.mainWindow().menuBar().removeAction(self.menu.menuAction())
             self.menu.deleteLater()
+        if self.provider is not None:
+            _registry().removeProvider(self.provider)
+            self.provider=None
