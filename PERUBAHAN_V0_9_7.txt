@@ -1,18 +1,19 @@
 NIB-NOP INTEGRATOR v0.9.7 - PROCESSING TOOLBOX
 
-- Modul 1, 2, 3, 3.1, 4 dan 5 terdaftar sebagai algoritma Processing (provider
-  "NIB–NOP Integrator", id nib_nop_integrator). Dapat dipakai di Graphical Modeler,
-  batch process, processing.run() dan qgis_process.
-- Algoritma tidak menulis ulang logika modul: processing_provider.HeadlessTool
-  meminjam run1..run5 dari dialogs.ToolDialog dan mengisi parameternya dari formulir
-  Processing. Aturan pemaduan, layer keluaran, rekap_csv.zip dan PDF sama persis
-  dengan menu.
-- Parameter (kunci, label, nilai bawaan) mengikuti dialog; ditambah format layer dan
-  folder hasil. Layer hasil dimuat ke proyek setelah selesai; Cancel = Batal.
+- Ketujuh tools menu terdaftar di Processing Toolbox (provider "NIB–NOP Integrator",
+  id nib_nop_integrator): Modul 1, 2, 3, 3.1, 4, 5 dan 6.
+- Double-click di Toolbox membuka jendela yang sama dengan menu
+  (createCustomParametersWidget): dialogs.ToolDialog untuk Modul 1-5 dan 3.1, panel
+  Verifikasi Studio untuk Modul 6.
+- Batch process, Graphical Modeler, processing.run() dan qgis_process memakai parameter
+  Processing. processing_provider.HeadlessTool meminjam run1..run5 dari
+  dialogs.ToolDialog, sehingga aturan pemaduan, layer keluaran, rekap_csv.zip dan PDF
+  sama persis dengan menu. Parameter (kunci, label, nilai bawaan) mengikuti dialog,
+  ditambah format layer dan folder hasil. Layer hasil dimuat ke proyek; Cancel = Batal.
 - Algoritma berjalan di thread utama (NoThreading) seperti dialog, karena membaca layer
   proyek dan melukis PDF dengan Qt.
-- Modul 6 (verifikasi studio) tetap hanya di menu.
+- Modul 6 interaktif di peta: hanya dibuka dari Toolbox/menu, disembunyikan dari Modeler.
 - plugin.py: initProcessing() (dipanggil QGIS karena hasProcessingProvider=yes, juga
   untuk qgis_process) dan pelepasan provider saat unload.
-- Uji baru tests/test_processing.py (memerlukan PyQGIS): 6 algoritma terdaftar, metode
+- Uji baru tests/test_processing.py (memerlukan PyQGIS): 7 algoritma terdaftar, metode
   dialog yang dipinjam masih ada, dan Modul 3 menghasilkan layer, PDF dan ZIP.

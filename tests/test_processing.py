@@ -1,4 +1,4 @@
-"""Processing provider: algorithms, dialog keys and a Modul 3 run. Needs PyQGIS (with qgis.gui).
+"""Processing provider: algorithms, Toolbox dialog, borrowed dialog methods and a Modul 3 run. Needs PyQGIS (with qgis.gui).
 
 Skipped under ``discover`` once test_fieldwidgets has stubbed ``qgis``; run alone:
 python -m unittest nibnop_integrator.tests.test_processing -v
@@ -49,7 +49,14 @@ class ProcessingTests(unittest.TestCase):
     def test_modules_registered(self):
         names = sorted(a.name() for a in self.provider.algorithms())
         self.assertEqual(names, ['modul_1_kelengkapan', 'modul_2_kualitas_spasial', 'modul_3_1_pemaduan_titik',
-                                 'modul_3_pemaduan_aturan', 'modul_4_training_ai', 'modul_5_inference_ai'])
+                                 'modul_3_pemaduan_aturan', 'modul_4_training_ai', 'modul_5_inference_ai',
+                                 'modul_6_verifikasi_studio'])
+
+    def test_toolbox_dialog_needs_iface(self):
+        # Without a QGIS window (qgis_process, tests) the generic Processing form is used.
+        import qgis.utils
+        if getattr(qgis.utils, 'iface', None) is None:
+            self.assertIsNone(self.alg('modul_1_kelengkapan').createCustomParametersWidget(None))
 
     def test_borrowed_dialog_methods_exist(self):
         from nibnop_integrator.dialogs import ToolDialog

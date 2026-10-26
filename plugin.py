@@ -16,7 +16,7 @@ class NibNopPlugin:
         # Called by QGIS (hasProcessingProvider=yes), also for qgis_process.
         if self.provider is None:
             from .processing_provider import NibNopProvider
-            self.provider=NibNopProvider()
+            self.provider=NibNopProvider(self.launch)
             _registry().addProvider(self.provider)
     def initGui(self):
         self.initProcessing()

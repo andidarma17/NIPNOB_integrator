@@ -34,11 +34,11 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 
 ## Pembaruan v0.9.7 - Processing Toolbox
 
-Modul 1, 2, 3, 3.1, 4 dan 5 kini juga tersedia sebagai algoritma di **Processing Toolbox → NIB–NOP Integrator**. Algoritma memakai orkestrasi yang sama dengan dialog menu (`dialogs.run1…run5`), sehingga aturan, layer keluaran (`01_padanan_level1`, dst.), `rekap_csv.zip` dan laporan PDF identik. Manfaatnya: dapat dipakai di *Graphical Modeler*, *batch process*, skrip Python (`processing.run('nib_nop_integrator:modul_3_pemaduan_aturan', {...})`) dan `qgis_process`.
+Ketujuh tools menu kini juga ada di **Processing Toolbox → NIB–NOP Integrator** (Modul 1, 2, 3, 3.1, 4, 5 dan 6).
 
-* Parameter memakai nama dan nilai bawaan yang sama dengan dialog; folder hasil dan format layer (GeoPackage/GeoJSON/Shapefile) dipilih di akhir formulir.
-* Layer hasil dimuat ke proyek setelah algoritma selesai. Tombol **Cancel** Processing berperilaku seperti **Batal** di dialog.
-* Modul 6 (verifikasi studio) bersifat interaktif di peta dan tetap hanya di menu.
+* **Double-click di Toolbox membuka jendela yang sama dengan menu**: dialog Modul 1–5 dan 3.1 dari menu, dan panel Verifikasi Studio untuk Modul 6. Tampilan, isian, tombol Batal, laporan dan keluarannya sama persis.
+* Untuk *batch process*, *Graphical Modeler*, skrip Python (`processing.run('nib_nop_integrator:modul_3_pemaduan_aturan', {...})`) dan `qgis_process`, Modul 1–5 dan 3.1 memakai formulir parameter Processing. Formulir itu menjalankan orkestrasi dialog yang sama (`dialogs.run1…run5`), jadi aturan, layer keluaran (`01_padanan_level1`, dst.), `rekap_csv.zip` dan PDF tetap identik. Parameter dan nilai bawaannya sama dengan dialog.
+* Modul 6 bersifat interaktif di peta, sehingga tidak tersedia di batch/Modeler/skrip.
 
 ## Pembaruan v0.9.6 - Pemadanan tahap 2 (buffer + skor nama)
 

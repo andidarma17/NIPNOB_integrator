@@ -1,10 +1,13 @@
-"""Processing Toolbox provider: Modul 1, 2, 3, 3.1, 4 and 5 as algorithms.
+"""Processing Toolbox provider: the seven menu tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
 
-The algorithms do not reimplement the modules. ``HeadlessTool`` borrows the
-``run1``..``run5`` orchestration of ``dialogs.ToolDialog`` and feeds it the
-Processing parameters through small stand-ins for the dialog widgets, so the
-matching rules, outputs and PDF reports stay identical to the menu tools.
-Modul 6 (verifikasi studio) is interactive on the map and stays in the menu.
+Opening a tool from the Toolbox shows the same window as the menu
+(``dialogs.ToolDialog``; Modul 6 opens the studio dock) through
+``createCustomParametersWidget``. Batch, Graphical Modeler, ``processing.run``
+and ``qgis_process`` use the Processing parameters instead: ``HeadlessTool``
+borrows the ``run1``..``run5`` orchestration of ``ToolDialog`` and feeds it those
+parameters through small stand-ins for the dialog widgets, so the matching rules,
+outputs and PDF reports stay identical to the menu tools. Modul 6 is interactive
+on the map and has no headless run.
 """
 from pathlib import Path
 from qgis.core import (Qgis, QgsProcessing, QgsProcessingAlgorithm, QgsProcessingContext,
@@ -32,6 +35,8 @@ DOUBLE = _enum(('ProcessingNumberParameterType', 'Double'),
                getattr(QgsProcessingParameterNumber, 'Double', 1))
 NO_THREADING = _enum(('ProcessingAlgorithmFlag', 'NoThreading'),
                      getattr(QgsProcessingAlgorithm, 'FlagNoThreading', 4))
+HIDE_FROM_MODELER = _enum(('ProcessingAlgorithmFlag', 'HideFromModeler'),
+                          getattr(QgsProcessingAlgorithm, 'FlagHideFromModeler', 2))
 FILE_TYPE = _enum(('ProcessingFileParameterBehavior', 'File'),
                   getattr(QgsProcessingParameterFile, 'File', 0))
 
@@ -196,6 +201,14 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
         return ('Sama dengan menu NIB–NOP Integrator → %s: aturan, keluaran layer, rekap_csv.zip dan '
                 'laporan PDF identik. Layer hasil dimuat ke proyek setelah selesai.' % self.spec['title'])
 
+    def createCustomParametersWidget(self, parent=None):
+        """Toolbox double-click: the menu's own dialog instead of the generic form."""
+        from qgis.utils import iface
+        if iface is None:
+            return None
+        from .dialogs import ToolDialog
+        return ToolDialog(iface, self.modul, parent or iface.mainWindow())
+
     def add_layer(self, prefix, label, types, optional=False, with_area=True, with_name=False):
         self.addParameter(QgsProcessingParameterVectorLayer(prefix, label, list(types), optional=optional))
         self.addParameter(QgsProcessingParameterField(prefix+'_ID', label+' - kolom identitas',
@@ -274,10 +287,55 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
         return {self.OUTPUT_FOLDER:str(folder)}
 
 
+class _OpenStudio:
+    """What the Toolbox shows and exec()s for Modul 6: the plugin's studio dock."""
+    def __init__(self, launch):self.launch = launch
+    def show(self):self.launch(6)
+    def exec(self):return 0
+    exec_ = exec
+
+
+class StudioAlgorithm(QgsProcessingAlgorithm):
+    """Modul 6 in the Toolbox. Interactive on the map, so it only opens the dock."""
+    OPEN = 'OPEN'
+
+    def __init__(self, launch=None):
+        super().__init__()
+        self.launch = launch
+
+    def createInstance(self):return StudioAlgorithm(self.launch)
+    def name(self):return 'modul_6_verifikasi_studio'
+    def displayName(self):return '6. Verifikasi Studio interaktif di peta'
+    def group(self):return 'NIB-NOP Integrator'
+    def groupId(self):return 'nib_nop_integrator'
+    def flags(self):return super().flags() | NO_THREADING | HIDE_FROM_MODELER
+    def shortHelpString(self):
+        return 'Membuka panel Verifikasi Studio (sama dengan menu NIB–NOP Integrator → 6).'
+
+    def initAlgorithm(self, config=None):
+        # The Toolbox runs parameterless algorithms directly instead of asking
+        # createCustomParametersWidget, so keep one visible parameter.
+        self.addParameter(QgsProcessingParameterBoolean(self.OPEN, 'Buka panel Verifikasi Studio',
+                                                        defaultValue=True))
+
+    def createCustomParametersWidget(self, parent=None):
+        return _OpenStudio(self.launch) if self.launch else None
+
+    def processAlgorithm(self, parameters, context, feedback):
+        raise QgsProcessingException('Modul 6 bersifat interaktif di peta; buka dari Processing Toolbox '
+                                     'atau menu NIB–NOP Integrator.')
+
+
 class NibNopProvider(QgsProcessingProvider):
+    def __init__(self, launch=None):
+        """``launch(modul)`` = NibNopPlugin.launch; needed for Modul 6 only."""
+        super().__init__()
+        self.launch = launch
+
     def loadAlgorithms(self, *args):
         for modul in MODULES:
             self.addAlgorithm(NibNopAlgorithm(modul))
+        self.addAlgorithm(StudioAlgorithm(self.launch))
     def id(self):return 'nib_nop_integrator'
     def name(self):return 'NIB–NOP Integrator'
     def longName(self):return self.name()
