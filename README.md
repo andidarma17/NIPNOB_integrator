@@ -13,7 +13,7 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 1. Jangan mengekstrak ZIP plugin. Buka QGIS → **Plugins → Manage and Install Plugins → Install from ZIP**.
 2. Pilih ZIP plugin versi terbaru (`NIBNOP_Integrator_v0.10.0_AI_Independent_Toolbox.zip`).
 3. Jika QGIS memberi peringatan *experimental*, aktifkan plugin percobaan dengan kesadaran status beta.
-4. Menu atas, **Vector → NIB–NOP Integrator**, dan **Processing Toolbox → NIB–NOP Integrator** menyediakan ketujuh tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
+4. **Vector → NIB–NOP Integrator** dan **Processing Toolbox → NIB–NOP Integrator** menyediakan ketujuh tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
 5. Buka layer BPN/PBB terlebih dahulu, lalu pilih nama layer dan masing-masing field identitas serta luas melalui dropdown **yang menampilkan semua kolom tanpa filter tipe data**. Default NIB, D_NOP, LUAS, D_LUAS akan dipilih jika ditemukan. Jika nama kolom berbeda, pilih sendiri. Kolom luas bertipe teks boleh dipilih jika nilainya berupa angka; nilai yang tidak dapat dibaca sebagai angka akan ditandai kosong/tidak numerik.
 6. Layer BPN harus poligon; layer PBB boleh **poligon atau titik NOP** (lihat "Pembaruan v0.9.5"). Semua layer memakai **CRS proyeksi bermeter**. Bila CRS berbeda, centang transformasi sementara PBB ke CRS BPN.
 

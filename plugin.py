@@ -1,5 +1,4 @@
-"""QGIS menu/toolbar plugin, seven separate tools (3.1 = PBB titik)."""
-from qgis.PyQt.QtWidgets import QMenu
+"""QGIS plugin, seven separate tools (3.1 = PBB titik) in Vector menu and Processing Toolbox."""
 from qgis.PyQt.QtCore import Qt
 from .compat import QAction
 
@@ -20,7 +19,6 @@ class NibNopPlugin:
             _registry().addProvider(self.provider)
     def initGui(self):
         self.initProcessing()
-        self.menu=QMenu('NIB–NOP Integrator',self.iface.mainWindow())
         # Internal id 31 = Modul 3.1 (PBB titik NOP).
         names=[(1,'1. Pemeriksaan kelengkapan'),(2,'2. Kualitas spasial dan fix geometry'),
                (3,'3. Penentuan level pemaduan berbasis aturan (PBB poligon)'),
@@ -31,9 +29,8 @@ class NibNopPlugin:
         for i,label in names:
             action=QAction(label,self.iface.mainWindow())
             action.triggered.connect(lambda checked=False,n=i:self.launch(n))
-            self.menu.addAction(action);self.actions.append(action)
+            self.actions.append(action)
             self.iface.addPluginToVectorMenu('NIB–NOP Integrator',action)
-        self.iface.mainWindow().menuBar().addMenu(self.menu)
     def toolbox_dock(self):
         """The Processing Toolbox panel, if it is in the main window."""
         from qgis.PyQt.QtWidgets import QDockWidget
@@ -82,9 +79,6 @@ class NibNopPlugin:
             self.dock.close()
             self.iface.removeDockWidget(self.dock)
             self.dock.deleteLater();self.dock=None
-        if getattr(self,'menu',None):
-            self.iface.mainWindow().menuBar().removeAction(self.menu.menuAction())
-            self.menu.deleteLater()
         if self.provider is not None:
             _registry().removeProvider(self.provider)
             self.provider=None
