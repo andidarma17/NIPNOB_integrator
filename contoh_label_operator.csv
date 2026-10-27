@@ -1,0 +1,3 @@
+pair_id,record_bpn,record_pbb,NIB,NOP,label,status_verifikasi,sumber_verifikasi,operator,catatan,jenis_data,wilayah
+B000001_P000002,1,2,B00001,P00002,1,DIVERIFIKASI,Dokumen administrasi dan peta asli,Nama Operator,Contoh isian saja,SINTETIS,DEMO_A
+B000003_P000004,3,4,B00003,P00004,0,DIVERIFIKASI,Dokumen administrasi dan peta asli,Nama Operator,Contoh isian saja,SINTETIS,DEMO_A

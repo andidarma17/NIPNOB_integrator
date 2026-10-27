@@ -1,0 +1,26 @@
+NIB-NOP INTEGRATOR v0.9.9 - BACKEND AI v0.9.8 + PROCESSING TOOLBOX
+
+Gabungan v0.9.8 (backend AI independen) dan v0.9.7 (Processing Toolbox).
+
+Dari v0.9.8 (tidak diubah): ml.py, ai_matching.py, engine.py, logic.py, ai_pdf.py,
+reporting_full.py, dan isi dialogs.py (Modul 4: tiga mode training; Modul 5: Full AI /
+Hybrid, usulan AI, konflik Rule-AI).
+
+Dari v0.9.7 (dibawa ke basis v0.9.8): processing_provider.py, plugin.py
+(initProcessing, hasProcessingProvider=yes), compat.layer_filter, filter layer vektor pada
+Selector/studio, perbaikan dropdown kolom untuk layer raster.
+
+Penyesuaian baru agar keduanya sinkron:
+1. processing_provider.py: parameter Modul 4 dan 5 mengikuti dialog v0.9.8
+   (dropdown TRAINING_MODE dan INFERENCE_MODE, RULE_SOURCE ZIP/CSV, skor bawaan 0,90,
+   tanpa gerbang/tahap-2 Modul 3 pada Modul 5, layer BPN/PBB wajib pada Modul 4).
+2. HeadlessTool menyediakan currentData() dan log (run4/run5 v0.9.8 menulis catatan ke
+   log; diteruskan ke feedback Processing).
+3. Judul Modul 5 di menu dan Toolbox: "5. Prediksi AI independen / Hybrid". Id algoritma
+   tetap modul_5_inference_ai agar model Batch/Modeler lama tetap dapat dibuka.
+4. Uji baru: tests/test_processing_spec.py (tanpa PyQGIS) dan test_processing.py
+   diperluas (parameter Modul 4/5).
+5. Nama folder paket: nibnop_integrator (folder cabang GitHub berhyphen dari ZIP v0.9.7
+   tidak dapat dimuat QGIS sebagai modul Python).
+
+Belum diuji di QGIS nyata. Lihat ACCEPTANCE_TEST.md bagian v0.9.9.

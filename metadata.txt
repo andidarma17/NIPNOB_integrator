@@ -1,0 +1,15 @@
+[general]
+name=NIB NOP Integrator
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+version=0.10.0
+experimental=True
+author=Tim Integrasi NIB-NOP
+email=plugin@example.invalid
+description=Audit dan pemaduan BPN-PBB dengan backend AI independen. Semua modul memakai formulir Processing (label di atas input, keluaran per layer, opsi lewati keluaran), tersedia di menu Vektor dan Processing Toolbox.
+about=PBB poligon/titik NOP; validasi nama opsional. Modul 3 aturan; Modul 4 tiga mode training, SILVER opsional, GOLD opsional; Modul 5 prediksi AI independen (Full AI) atau Hybrid dari hasil Modul 3 terverifikasi sidik-jari; Modul 6 studio. Modul 1-5 memakai formulir Processing standar (menu Vektor, Toolbox, Batch, Modeler, qgis_process) dengan keluaran terpisah per layer; Modul 6 berupa panel yang dapat di-scroll. QGIS 3.28+ dan 4.x dirancang, belum diuji GUI lintas versi.
+category=Vector
+hasProcessingProvider=yes
+homepage=https://qgis.org
+tracker=https://qgis.org
+repository=https://qgis.org

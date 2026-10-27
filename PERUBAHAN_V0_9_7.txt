@@ -1,0 +1,16 @@
+NIB-NOP INTEGRATOR v0.9.7 - PERBAIKAN GOLD & INFERENCE
+
+1. Modul 4 membaca koma / titik koma dan memberi galat untuk skema CSV rusak.
+2. GOLD membutuhkan label 0/1, status DIVERIFIKASI/TERVERIFIKASI,
+   dan sumber_verifikasi. NOP notasi ilmiah ditolak sebagai identitas rusak.
+3. Identitas NIB+NOP yang unik lebih dipercaya daripada nomor urut record;
+   pair_id lama yang bertentangan dengan NIB/NOP tidak digunakan.
+4. Training tidak lagi melanjutkan diam-diam jika file GOLD terpilih tetapi
+   nol pasangan diterima. Baris tertolak tersedia di gold_ditolak.csv.
+5. Modul 4 menampilkan n GOLD positif/negatif, n ditolak, validasi dan testing.
+6. Modul 5 melaporkan alasan konkret kandidat tidak menjadi Level 1,
+   menghasilkan rekap_gerbang_ai.csv, dan layer 04_rekomendasi_ai_studio
+   untuk saran AI pada BPN yang belum dipadankan melalui aturan.
+7. Aturan pemaduan deterministik dan perlindungan promosi AI tidak dilonggarkan.
+8. Enam pengujian impor GOLD tanpa PyQGIS ditambahkan; uji nyata GUI/QGIS
+   tetap perlu dilakukan sebelum penggunaan operasional.
