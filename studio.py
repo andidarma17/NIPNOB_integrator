@@ -6,7 +6,7 @@ from qgis.core import QgsGeometry,QgsCoordinateTransform,QgsProject
 from qgis.gui import QgsMapLayerComboBox,QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import (QDockWidget,QWidget,QVBoxLayout,QFormLayout,
     QHBoxLayout,QPushButton,QLineEdit,QLabel,QTableWidget,QTableWidgetItem,
-    QHeaderView,QMessageBox,QFileDialog,QComboBox,QAbstractItemView,QCheckBox)
+    QHeaderView,QMessageBox,QFileDialog,QComboBox,QAbstractItemView,QCheckBox,QScrollArea,QFrame)
 from .engine import read_pair,prepare_local,make_candidate_rows,fix_geometry,layer_fingerprint
 from .logic import ident,name_similarity,name_status
 from .fieldwidgets import LayerFieldComboBox
@@ -49,7 +49,13 @@ class VerificationDock(QDockWidget):
         super().__init__('NIB-NOP | Modul 6 - Verifikasi Studio',parent)
         self.iface=iface;self.candidates=[];self.decisions={};self.current=None
         self.setObjectName('NibNopVerificationStudio')
-        wrapper=QWidget();self.setWidget(wrapper)
+        wrapper=QWidget()
+        # The panel is long (layers, fields, table, operator, export). Put it in a scroll area so
+        # nothing falls below the window when it is docked under the Processing Toolbox.
+        scroll=QScrollArea();scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(wrapper);self.setWidget(scroll)
+        wrapper.setMinimumWidth(360)
         layout=QVBoxLayout(wrapper)
         form=QFormLayout()
         self.bpn=QgsMapLayerComboBox();self.pbb=QgsMapLayerComboBox()
@@ -96,6 +102,7 @@ class VerificationDock(QDockWidget):
                                               'Nama','Skor AI','Label'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setMinimumHeight(180)  # keep the table usable inside the scroll area
         self.table.itemSelectionChanged.connect(self.on_row_selected)
         layout.addWidget(self.table)
         paginator=QHBoxLayout();prev=QPushButton('◀ Sebelum');nex=QPushButton('Berikut ▶')

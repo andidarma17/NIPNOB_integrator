@@ -115,7 +115,10 @@ class Canvas:
         page.limit('Metrik TRAIN menjelaskan data latihan; hasilnya tidak mengukur kinerja pada pasangan baru.',
                    'Skor AI dan metrik TEST bukan bukti administratif pasangan NIB–NOP.')
         page.section('Data yang dipakai')
-        rows=[('Model terpilih',selected),
+        rows=[('Mode / bobot SILVER','%s / %.2f'%(
+               evaldata.get('mode_training','TIDAK_TERCATAT'),
+               float(evaldata.get('bobot_efektif_silver_training',0)))),
+              ('Model terpilih',selected),
               ('GOLD independen',str(gold)),
               ('SILVER hasil aturan',str(evaldata.get('jumlah_silver',0))),
               ('FIT / validasi','%s / %s'%(evaldata.get('jumlah_fit',0),

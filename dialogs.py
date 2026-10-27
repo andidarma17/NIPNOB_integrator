@@ -32,7 +32,7 @@ LEVEL1_EXTRA=[('nop_padanan','String'),('level','Int'),('metode_padu','String'),
 MODULE_TITLES={1:'01 - Audit Kelengkapan',2:'02 - Kualitas Spasial',
                3:'03 - Penentuan level pemaduan berbasis aturan (PBB poligon)',
                31:'03.1 - Penentuan level pemaduan PBB titik (NOP)',
-               4:'04 - Training AI',5:'05 - Inference AI'}
+               4:'04 - Training AI',5:'05 - Prediksi AI independen / Hybrid'}
 
 
 def module_label(modul):
@@ -238,9 +238,9 @@ class ToolDialog(QDialog):
             self.use_gap=QCheckBox('Delineasi gap tertutup BPN ke layer bpn_kandidat_gap')
             self.use_gap.setChecked(True)
             self.param_form.addRow('',self.use_gap)
-        if m in (3,5):
+        if m==3:
             self.add_spin('overlap','Ambang irisan > (% luas BPN):',50,0,100,1)
-        if m in (3,31,5):
+        if m in (3,31):
             self.add_spin('sim','Kesamaan luas tertulis > (%):',90,0,100,1)
             self.add_spin('dev','Deviasi luas-geometri maksimum (%):',50,0,500,1)
             self.add_spin('min_irisan','Minimum luas irisan / overlap internal BPN (m²):',.01,0,500,3)
@@ -256,29 +256,36 @@ class ToolDialog(QDialog):
             for key in ('min_gap','gap_warn'):
                 self.param[key].setEnabled(False)
                 self.use_gap.toggled.connect(self.param[key].setEnabled)
-        if m in (31,5):
-            if m==31:
-                info=QLabel('Modul 3.1 untuk PBB yang hanya tersedia sebagai titik NOP. Gerbang overlap '
-                            'diganti "titik NOP berada di dalam bidang BPN"; gerbang identitas, keunikan 1:1 '
-                            'dan luas tetap berlaku. Karena bukti spasial titik lebih lemah, gunakan kolom '
-                            'nama untuk validasi tambahan kekuatan padanan.')
-                info.setWordWrap(True);self.param_form.addRow(info)
+        if m==31:
+            info=QLabel('Modul 3.1 untuk PBB yang hanya tersedia sebagai titik NOP. Gerbang overlap '
+                        'diganti "titik NOP berada di dalam bidang BPN"; gerbang identitas, keunikan 1:1 '
+                        'dan luas tetap berlaku. Karena bukti spasial titik lebih lemah, gunakan kolom '
+                        'nama untuk validasi tambahan kekuatan padanan.')
+            info.setWordWrap(True);self.param_form.addRow(info)
             self.add_spin('point_tol','Toleransi titik PBB di luar bidang (m; hanya calon Level 2)'
-                          +(' - bila PBB titik:' if m==5 else ' / buffer tahap 2:'),5,0,1000)
+                          ' / buffer tahap 2:',5,0,1000)
         if m in (3,31,5):
             self.add_spin('name_match','Nama COCOK bila kesamaan nama ≥ (%):',90,0,100,1)
             self.add_spin('name_partial','Nama MIRIP bila kesamaan nama ≥ (%):',60,0,100,1)
+        if m in (3,31):
             self.require_name=QCheckBox('Nama TIDAK COCOK menurunkan pasangan ke Level 2 (NAMA_TIDAK_COCOK)')
             self.require_name.setChecked(False)
             self.param_form.addRow('',self.require_name)
-        if m in (3,31,5):
+        if m in (3,31):
             self.setup_name_stage()
         if m==4:
+            from .ai_matching import TRAINING_MODES
+            self.training_mode=QComboBox()
+            self.training_mode.addItem('GOLD Only (terverifikasi)',TRAINING_MODES[1])
+            self.training_mode.addItem('SILVER Only (hasil aturan)',TRAINING_MODES[0])
+            self.training_mode.addItem('SILVER + GOLD (gabungan)',TRAINING_MODES[2])
+            self.param_form.addRow('Sumber pelatihan:',self.training_mode)
             info=QLabel('Bila kolom nama BPN dan PBB dipilih, model dilatih dengan fitur nama '
                         '(skor_nama, nama_tidak_dinilai; versi fitur QGIS_PLUGIN_V2) dan Modul 5 '
                         'wajib memakai kolom nama juga.')
             info.setWordWrap(True);self.param_form.addRow(info)
-            self.silver=self.filepick('CSV kandidat Modul 3 (silver):')
+            self.silver=self.filepick('Rekap Modul 3 untuk SILVER (ZIP/CSV):',
+                                      'ZIP/CSV (*.zip *.csv);;Semua (*)')
             self.name_silver=QCheckBox('Sertakan padanan tahap 2 (RULE_NAMA) dari CSV Modul 3 sebagai silver')
             self.name_silver.setChecked(False)
             self.param_form.addRow('',self.name_silver)
@@ -298,16 +305,43 @@ class ToolDialog(QDialog):
             self.hist_toggle.toggled.connect(self.hist_pbb.setVisible)
             self.add_spin('radius','Radius pencarian kandidat (meter):',15,0,1000)
             self.add_spin('target','Target precision GOLD:',.99,.5,1.,3)
+            self.training_mode.currentIndexChanged.connect(self.update_training_fields)
+            self.update_training_fields()
         if m==5:
+            self.inference_mode=QComboBox()
+            self.inference_mode.addItem('Hybrid: hasil Modul 3 + tambahan AI','HYBRID')
+            self.inference_mode.addItem('Full AI: prediksi tanpa aturan Modul 3','AI_ONLY')
+            self.param_form.addRow('Mode prediksi:',self.inference_mode)
+            self.rule_source=self.filepick('Rekap Modul 3 (Hybrid; ZIP/CSV):',
+                                           'ZIP/CSV (*.zip *.csv);;Semua (*)')
+            self.inference_mode.currentIndexChanged.connect(self.update_inference_fields)
             self.model=self.filepick('Model terlatih (.joblib):','Joblib (*.joblib);;Semua (*)')
             self.meta=self.filepick('Metadata model (.json):','JSON (*.json);;Semua (*)')
             self.add_spin('radius','Radius kandidat AI (meter):',15,0,1000)
-            self.add_spin('confidence','Skor minimum AI:',.95,.5,1.,3)
+            self.add_spin('confidence','Skor minimum AI:',.90,.5,1.,3)
             self.add_spin('margin','Selisih skor kandidat ke-1 vs ke-2:',.15,0,1.,3)
-            self.promote=QCheckBox('Izinkan tambahan Level 1 berbasis AI HANYA bila GOLD telah lolos pengujian')
+            self.promote=QCheckBox('Izinkan Level 1 AI otomatis hanya bila model lolos GOLD independen')
             self.param_form.addRow('',self.promote)
             self.promote.setChecked(False)
+            info=QLabel('AI menilai kandidat secara independen. Overlap, deviasi luas dan nama adalah '
+                        'fitur model, BUKAN gerbang aturan Modul 3. SILVER Only tetap bisa menghasilkan '
+                        'USULAN_AI_STUDIO, tetapi tidak diterima otomatis tanpa pengujian GOLD.')
+            info.setWordWrap(True);self.param_form.addRow(info)
             self.param_form.addRow(QLabel('PERHATIAN: file model joblib hanya dari sumber yang dipercaya.'))
+            self.update_inference_fields()
+    def update_training_fields(self,*_):
+        mode=self.training_mode.currentData()
+        uses_silver=mode in ('SILVER_ONLY','SILVER_GOLD')
+        uses_gold=mode in ('GOLD_ONLY','SILVER_GOLD')
+        for w in (self.silver,self.name_silver,self.param['name_silver_weight']):
+            w.setEnabled(uses_silver)
+        self.param['name_silver_weight'].setEnabled(uses_silver and self.name_silver.isChecked())
+        for w in (self.gold_features,self.gold_operator,self.hist_toggle,self.hist_csv,self.param['target']):
+            w.setEnabled(uses_gold)
+        self.hist_bpn.setEnabled(uses_gold)
+        self.hist_pbb.setEnabled(uses_gold)
+    def update_inference_fields(self,*_):
+        self.rule_source.setEnabled(self.inference_mode.currentData()=='HYBRID')
     def setup_name_stage(self):
         """Tahap 2 (Modul 3/3.1/5): buffer search + combined score for Level 2."""
         self.name_stage=QCheckBox('Tahap 2: cari ulang padanan Level 2 dalam buffer dengan skor nama')
@@ -602,32 +636,38 @@ class ToolDialog(QDialog):
         from .ml import (labels_for_pairs,add_historical_labeled_features,
                          add_historical_pair_labels,train_model,feature_version)
         from .engine import FEATURE_VERSIONS
+        from .ai_matching import training_mode
         from .storage import zip_csv
         from collections import Counter
         silver=[];gold=[];candidates=[];unresolved=[];logs=[]
+        mode=self.training_mode.currentData()
+        with_silver=mode in ('SILVER_ONLY','SILVER_GOLD')
+        with_gold=mode in ('GOLD_ONLY','SILVER_GOLD')
+        training_mode(with_silver,with_gold)
         version=feature_version(bool(self.ml_names(self.bpn,self.pbb)[0]))
         features=FEATURE_VERSIONS[version]
-        name_weight=self.val('name_silver_weight') if self.name_silver.isChecked() else None
-        try:
-            _,_,br,pr,logs=self.prepared_ml()
-            candidates=make_candidate_rows(br,pr,.01,self.val('radius'),progress=self.progress)
-            silver_path=self.silver.text().strip() or None
-            if silver_path:
-                from .ml import csv_rows
-                raw=csv_rows(silver_path)
-                if not raw or not all('src_bpn_sha' in v and 'src_pbb_sha' in v for v in raw):
-                    raise ValueError('CSV Modul 3 harus dibuat oleh plugin ini dengan sidik-jari data operator.')
-                exp_b,exp_p=layer_fingerprint(self.bpn.layer.currentLayer()),layer_fingerprint(self.pbb.layer.currentLayer())
-                if any(v['src_bpn_sha']!=exp_b or v['src_pbb_sha']!=exp_p for v in raw):
-                    raise ValueError('Data operator telah berubah sejak Modul 3. Jalankan ulang Modul 3 untuk file terbaru.')
-            silver,gold,unresolved=labels_for_pairs(candidates,self.gold_operator.text().strip() or None,
-                                              silver_path,name_silver_weight=name_weight)
-        except ValueError:
-            # May train from an external fully labelled feature CSV only; don't hide
-            # other failures when source layers were supplied.
-            if not self.gold_features.text().strip():raise
-        n_hist=add_historical_labeled_features(gold,self.gold_features.text().strip(),features)
-        if self.hist_toggle.isChecked():
+        name_weight=(self.val('name_silver_weight') if with_silver and self.name_silver.isChecked()
+                     else None)
+        _,_,br,pr,logs=self.prepared_ml()
+        candidates=make_candidate_rows(br,pr,.01,self.val('radius'),progress=self.progress)
+        silver_path=(self.silver.text().strip() or None) if with_silver else None
+        if with_silver and not silver_path:
+            raise ValueError('Mode %s memerlukan CSV pasangan Modul 3 sebagai sumber SILVER.'%mode)
+        if silver_path:
+            from .ml import csv_rows
+            raw=csv_rows(silver_path)
+            if not raw or not all('src_bpn_sha' in v and 'src_pbb_sha' in v for v in raw):
+                raise ValueError('CSV Modul 3 harus dibuat oleh plugin ini dengan sidik-jari data operator.')
+            exp_b,exp_p=layer_fingerprint(self.bpn.layer.currentLayer()),layer_fingerprint(self.pbb.layer.currentLayer())
+            if any(v['src_bpn_sha']!=exp_b or v['src_pbb_sha']!=exp_p for v in raw):
+                raise ValueError('Data operator telah berubah sejak Modul 3. Jalankan ulang Modul 3 untuk file terbaru.')
+        silver,gold,unresolved=labels_for_pairs(candidates,(self.gold_operator.text().strip() or None)
+                                          if with_gold else None,
+                                          silver_path,name_silver_weight=name_weight)
+        n_hist=add_historical_labeled_features(gold,self.gold_features.text().strip(),features) if with_gold else 0
+        if with_gold and self.hist_toggle.isChecked():
+            if not self.hist_csv.text().strip():
+                raise ValueError('CSV pasangan historis berlabel wajib dipilih bila layer historis diaktifkan.')
             bl,bi,ba=self.hist_bpn.values();pl,pi,pa=self.hist_pbb.values()
             if not (bl and pl and bi and ba and pi and pa):
                 raise ValueError('Layer historis dan kolomnya belum lengkap.')
@@ -640,11 +680,38 @@ class ToolDialog(QDialog):
             hist_candidates=make_candidate_rows(rb,rp,.01,self.val('radius'))
             count=add_historical_pair_labels(gold,hist_candidates,self.hist_csv.text().strip())
             logs.append('Pasangan historis GOLD: %s'%count)
+        supplied_gold=with_gold and any((self.gold_operator.text().strip(),self.gold_features.text().strip(),
+                                        self.hist_toggle.isChecked() and self.hist_csv.text().strip()))
+        if with_gold and not supplied_gold:
+            raise ValueError('Mode %s memerlukan GOLD: pilih CSV operator, fitur historis, '
+                             'atau pasangan GeoJSON historis berlabel.' % mode)
+        if supplied_gold and not gold:
+            reasons=Counter(x.get('alasan_penolakan','TIDAK_LOLOS') for x in unresolved)
+            raise ValueError('Data GOLD sudah dipilih tetapi 0 pasangan valid/terpetakan. '
+                             'Rincian penolakan: %s. Periksa status/bukti verifikasi, '
+                             'NOP asli, pasangan dan radius kandidat.' % dict(reasons))
+        if unresolved:
+            reasons=Counter(x.get('alasan_penolakan','TIDAK_LOLOS') for x in unresolved)
+            logs.append('GOLD tidak digunakan: %d baris. Alasan: %s.' %
+                        (len(unresolved),dict(reasons)))
+        if supplied_gold:
+            logs.append('GOLD diterima: %d; GOLD ditolak: %d. Label 1=%d, label 0=%d.' %
+                        (len(gold),len(unresolved),sum(x['label']==1 for x in gold),
+                         sum(x['label']==0 for x in gold)))
         gold_current_ids={x['pair_id'] for x in gold if x.get('label_source')=='GOLD_OPERATOR'}
         silver=[x for x in silver if x['pair_id'] not in gold_current_ids]
-        model,metadata,metrics=train_model(silver,gold,out,self.val('target'),version)
+        if with_silver and not silver:
+            raise ValueError('CSV Modul 3 tidak menghasilkan label SILVER yang cocok. '
+                             'Pastikan ada Level 1 aturan dan kandidat kontras.')
+        model,metadata,metrics=train_model(silver,gold,out,self.val('target'),version,
+                                           training_mode=mode)
+        self.log.appendPlainText('Training selesai: %d GOLD valid, %d GOLD ditolak, '
+                                 '%d SILVER; status model %s (testing GOLD: %d).' %
+                                 (len(gold),len(unresolved),len(silver),metadata['status'],
+                                  metadata['n_testing']))
         logs.append('Versi fitur model: %s (%d fitur%s).'%(version,len(features),
                     ', termasuk nama' if version=='QGIS_PLUGIN_V2' else ''))
+        logs.append('Mode pelatihan: %s. SILVER=%d, GOLD=%d.'%(mode,len(silver),len(gold)))
         if name_weight is not None:
             logs.append('Silver RULE_NAMA (tahap 2): %d pasangan, bobot %.2f.'%(
                 sum(1 for x in silver if x.get('label_source')=='SILVER_RULE_NAMA'),name_weight))
@@ -652,7 +719,13 @@ class ToolDialog(QDialog):
         from .ai_pdf import make_training_report
         from .evaluation import threshold_guidance
         evaluation=json.loads((out/'evaluasi_testing_ai.json').read_text(encoding='utf-8'))
-        summary={'Kandidat sekarang':len(candidates),'SILVER':len(silver),'GOLD':len(gold),
+        summary={'Mode training':mode,'Kandidat sekarang':len(candidates),'SILVER':len(silver),'GOLD':len(gold),
+                 'GOLD ditolak':len(unresolved),
+                 'GOLD positif':sum(x['label']==1 for x in gold),
+                 'GOLD negatif':sum(x['label']==0 for x in gold),
+                 'Grup spasial GOLD':metadata['n_gold_groups'],
+                 'GOLD validasi':metadata['n_validation'],
+                 'GOLD testing':metadata['n_testing'],
                  'Historis CSV GOLD':n_hist,'Status model':metadata['status'],
                  'Algoritma terpilih':metadata['algorithm'],
                  'Status evaluasi GOLD':evaluation['status_operasional']}
@@ -671,7 +744,8 @@ class ToolDialog(QDialog):
         # Create packaged CSV only; replace the summary PDF by a full,
         # vector-graphics training/testing evaluation report.
         archive=zip_csv(out,{'fitur_kandidat.csv':candidates,'silver_labels.csv':silver,
-                     'gold_labels.csv':gold,'template_verifikasi_operator.csv':template,
+                     'gold_labels.csv':gold,'gold_ditolak.csv':unresolved,
+                     'template_verifikasi_operator.csv':template,
                      'metrik_train_validation_test.csv':metrics,
                      'feature_importance.csv':feature_rows,
                      'panduan_ambang_metrik.csv':threshold_rows,
@@ -681,66 +755,104 @@ class ToolDialog(QDialog):
         return [str(out/'model_terpilih.joblib'),str(out/'metadata_model.json'),
                 str(out/'evaluasi_testing_ai.json'),pdf,archive]
     def run5(self,out):
+        """Predict all spatial candidates; import rules only for optional merge.
+
+        No call to ``determine_levels`` and no Modul 3 area/overlap hard gates.
+        GOLD-independent validation remains mandatory for automatic Level 1.
+        """
         from .ml import predict
-        b,p,br,pr,ob,op,_,logs=self.prepare3()
-        opts=self.opts()
-        lvl1,lvl2b,lvl2p,pairs,baseline=determine_levels(br,pr,opts,self.progress)
+        from .ai_matching import load_rule_baseline,select_ai_proposals
+        b,p,bid,pid,ba,pa=self.two_layers()
+        if self.val('name_partial')>self.val('name_match'):
+            raise ValueError('Ambang nama MIRIP tidak boleh melebihi ambang nama COCOK.')
+        if not self.model.text().strip() or not self.meta.text().strip():
+            raise ValueError('Modul 5 membutuhkan model terlatih (.joblib) DAN metadata model (.json).')
+        mode=self.inference_mode.currentData()
+        b,p,br,pr,logs=self.prepared_ml()
         refb={r['idx']:r for r in br};refp={r['idx']:r for r in pr}
-        extras=[];meta={'status':'NO_MODEL'}
-        if self.model.text().strip() or self.meta.text().strip():
-            if not self.model.text().strip() or not self.meta.text().strip():
-                raise ValueError('Isi path model dan metadata secara bersamaan.')
-            ai_candidates=make_candidate_rows(br,pr,opts['min_irisan'],self.val('radius'),
-                                              name_thresholds=(opts['name_match'],opts['name_partial']),
-                                              progress=self.progress)
-            meta=predict(ai_candidates,self.model.text().strip(),self.meta.text().strip())
-            occupied_b={r['record_bpn'] for r in baseline};occupied_p={r['record_pbb'] for r in baseline}
-            indices_b=Counter(r['a']['_id_field_value'] for r in br)
-            indices_p=Counter(r['a']['_id_field_value'] for r in pr)
-            byb={};byp={}
-            for r in ai_candidates:
-                byb.setdefault(r['record_bpn'],[]).append(r)
-                byp.setdefault(r['record_pbb'],[]).append(r)
-            ranked=sorted(ai_candidates,key=lambda x:-x.get('skor_ai',0.))
-            for r in ranked:
-                i=r['record_bpn'];j=r['record_pbb'];score=r['skor_ai']
-                idb=refb[i]['a']['_id_field_value'];idp=refp[j]['a']['_id_field_value']
-                competitor_b=max([x['skor_ai'] for x in byb[i] if x['record_pbb']!=j] or [0.])
-                competitor_p=max([x['skor_ai'] for x in byp[j] if x['record_bpn']!=i] or [0.])
-                gates={
-                    'model':meta['status']=='GOLD_TESTED_REVIEW_REQUIRED' and self.promote.isChecked(),
-                    'skor':score>=self.val('confidence'),
-                    'id_unik':bool(idb and idp and indices_b[idb]==1 and indices_p[idp]==1),
-                    'overlap':not (refb[i]['a'].get('overlap') or refp[j]['a'].get('overlap')),
-                    'deviasi':(r['deviasi_luas_bpn'] is not None and r['deviasi_luas_pbb'] is not None and
-                               r['deviasi_luas_bpn']<=opts['max_dev'] and r['deviasi_luas_pbb']<=opts['max_dev']),
-                    'margin':score-max(competitor_b,competitor_p)>=self.val('margin'),
-                    'pesaing':competitor_b<self.val('confidence') and competitor_p<self.val('confidence'),
-                    'tersedia':i not in occupied_b and j not in occupied_p,
-                    'nama':not (opts['require_name'] and r.get('valid_nama')=='TIDAK_COCOK')}
-                r.update({'gerbang_'+key:'Lolos' if passed else 'Perlu telaah'
-                          for key,passed in gates.items()})
-                r['alasan_tidak_promosi']='; '.join(key.replace('_',' ') for key,passed in gates.items() if not passed)
-                if not all(gates.values()):continue
-                occupied_b.add(i);occupied_p.add(j);r['metode_padu']='AI_VERIFIED'
-                extras.append(r)
-            if extras:
-                # Build output for AI extras; baseline protected.
-                for r in extras:
-                    rb=refb[r['record_bpn']];rp=refp[r['record_pbb']]
-                    lvl1.append(level1_record(rb,rp,r,'AI_VERIFIED',r['skor_ai'],
-                                              names_used=bool(opts['bpn_name'])))
-                lvl2b=[r for r in lvl2b if r['idx'] not in occupied_b]
-                lvl2p=[r for r in lvl2p if r['idx'] not in occupied_p]
-            # One complete score table, with accepted/rejected status for studio.
-            scores=[]
-            accepted={r['pair_id'] for r in extras}
-            for candidate in ai_candidates:
-                c=dict(candidate)
-                c['keputusan_ai']=('DITERIMA_LEVEL1' if candidate['pair_id'] in accepted
-                                 else 'REKOMENDASI_STUDIO')
-                scores.append(c)
-        else:scores=[]
+        bname,pname=self.ml_names(self.bpn,self.pbb)
+        baseline=[];pairs=[]
+        if mode=='HYBRID':
+            path=self.rule_source.text().strip()
+            if not path:
+                raise ValueError('Mode Hybrid membutuhkan rekap_csv.zip hasil Modul 3 '
+                                 '(atau pasangan_kandidat.csv yang sudah diekstrak).')
+            baseline,pairs=load_rule_baseline(path,layer_fingerprint(b),layer_fingerprint(p))
+            for row in baseline:
+                i,j=row['record_bpn'],row['record_pbb']
+                if i not in refb or j not in refp:
+                    raise ValueError('Indeks record hasil Modul 3 tidak ditemukan pada input BPN/PBB.')
+                if (ident(refb[i]['a'].get(bid))!=row['NIB'] or
+                        ident(refp[j]['a'].get(pid))!=row['NOP']):
+                    raise ValueError('Identitas NIB/NOP hasil Modul 3 tidak cocok dengan layer saat ini.')
+            logs.append('Hybrid: %d pasangan aturan diimpor, tanpa menjalankan ulang Modul 3.'%len(baseline))
+        else:
+            logs.append('Full AI: prediksi independen tanpa membaca atau menjalankan aturan Modul 3.')
+        ai_candidates=make_candidate_rows(br,pr,.01,self.val('radius'),
+                            name_thresholds=(self.val('name_match'),self.val('name_partial')),
+                            progress=self.progress)
+        meta=predict(ai_candidates,self.model.text().strip(),self.meta.text().strip())
+        tested=meta.get('status')=='GOLD_TESTED_REVIEW_REQUIRED'
+        requested=self.promote.isChecked()
+        tested_threshold=float(meta.get('threshold',.90))
+        if requested and tested and self.val('confidence')+1e-9<tested_threshold:
+            raise ValueError('Skor minimum Modul 5 (%.2f) lebih rendah daripada ambang '
+                             'yang telah diuji menggunakan GOLD (%.2f). Gunakan minimal %.2f '
+                             'untuk penambahan Level 1 otomatis.'%
+                             (self.val('confidence'),tested_threshold,tested_threshold))
+        allowed=requested and tested
+        indices_b=Counter(ident(r['a'].get(bid)) for r in br if ident(r['a'].get(bid)))
+        indices_p=Counter(ident(r['a'].get(pid)) for r in pr if ident(r['a'].get(pid)))
+        proposals,extras,scores,gate_failures=select_ai_proposals(
+            ai_candidates,self.val('confidence'),self.val('margin'),
+            indices_b,indices_p,baseline=baseline,allow_promotion=allowed)
+        lvl1=[]
+        for pair in baseline:
+            rb=refb[pair['record_bpn']];rp=refp[pair['record_pbb']]
+            lvl1.append(level1_record(rb,rp,pair,pair.get('metode_padu') or 'RULE',
+                                       names_used=bool(bname)))
+        for pair in extras:
+            rb=refb[pair['record_bpn']];rp=refp[pair['record_pbb']]
+            pair['metode_padu']='AI_VERIFIED'
+            lvl1.append(level1_record(rb,rp,pair,'AI_VERIFIED',pair['skor_ai'],
+                                       names_used=bool(bname)))
+        occupied_b={row['record_bpn'] for row in baseline+extras}
+        occupied_p={row['record_pbb'] for row in baseline+extras}
+        best_by_b={}
+        for candidate in scores:
+            idx=candidate['record_bpn']
+            if idx not in occupied_b and idx not in best_by_b:
+                best_by_b[idx]=candidate
+        def studio_record(source,related=None):
+            attrs=dict(source['a'])
+            attrs['level']=2
+            attrs['kode_l2']='VERIFIKASI_STUDIO_AI'
+            attrs['alasan_l2']='Belum ada padanan otomatis yang telah memenuhi syarat penerimaan.'
+            if related is not None:
+                attrs['calon_n']=1
+                attrs['calon_id']=str(related.get('NOP') or '')
+                attrs['calon_nama']=str(related.get('valid_nama') or '')
+            return {'idx':source['idx'],'fid':source['fid'],'a':attrs,'geom':source['geom']}
+        lvl2b=[studio_record(r,best_by_b.get(r['idx'])) for r in br
+               if r['idx'] not in occupied_b]
+        lvl2p=[studio_record(r) for r in pr if r['idx'] not in occupied_p]
+        model_notes=['Mode %s. Model %s: %d usulan AI satu-ke-satu, %d Level 1 AI diterima.'%
+                     (mode,meta.get('training_mode','tidak tercatat'),len(proposals),len(extras))]
+        if not tested:
+            model_notes.append('Model tanpa pengujian GOLD independen yang memenuhi target: '
+                               'usulan AI hanya untuk verifikasi studio.')
+        elif not requested:
+            model_notes.append('Model teruji GOLD, tetapi izin menerima Level 1 otomatis tidak dicentang.')
+        if mode=='HYBRID':
+            model_notes.append('Pasangan Modul 3 diimpor dari hasil sebelumnya dan tidak diubah oleh AI.')
+        model_notes.append('Overlap, deviasi luas, bentuk, jarak, dan nama digunakan sebagai fitur AI, '
+                           'bukan sebagai aturan penolakan Level 1.')
+        if gate_failures:
+            model_notes.append('Kegagalan seleksi kandidat AI (satu kandidat dapat gagal beberapa): %s.'%
+                               dict(gate_failures))
+        self.log.appendPlainText('Modul 5: %s; %d kandidat diberi skor; %d usulan AI; '
+                                 '%d Level 1 AI otomatis.'%
+                                 (mode,len(scores),len(proposals),len(extras)))
         l1schema=columns(b,LEVEL1_EXTRA+[('skor_ai','Double')])
         l1schema.extend(('pbb_'+f.name(),f.type()) for f in p.fields() if f.name() not in QA_COLUMNS)
         paths=[self.persist(layer_from_records(lvl1,b.crs(),l1schema,'Level 1','MultiPolygon'),
@@ -751,25 +863,89 @@ class ToolDialog(QDialog):
                self.persist(layer_from_records(lvl2p,b.crs(),columns(p,LEVEL2_EXTRA),'PBB Level 2',
                                                output_geom_type(p)),
                             '03_pbb_level2',out)]
+        # Studio suggestions are separate from accepted Level 1 layers.
+        if scores:
+            suggestion_rows=[]
+            for idx,c in best_by_b.items():
+                source=refb[idx]
+                attrs=dict(source['a'])
+                attrs.update({'nop_kandidat':str(c.get('NOP','')),
+                              'skor_ai':c.get('skor_ai'),
+                              'keputusan_ai':c.get('keputusan_ai','REKOMENDASI_STUDIO'),
+                              'alasan_ai':c.get('alasan_tidak_promosi','') or 'Lolos seluruh gerbang'})
+                suggestion_rows.append({'idx':idx,'fid':source['fid'],
+                                        'a':attrs,'geom':source['geom']})
+            schema=columns(b,[('nop_kandidat','String'),('skor_ai','Double'),
+                              ('keputusan_ai','String'),('alasan_ai','String')])
+            paths.append(self.persist(layer_from_records(suggestion_rows,b.crs(),schema,
+                        'Saran AI untuk verifikasi','MultiPolygon'),
+                        '04_rekomendasi_ai_studio',out))
+        # Expose proposed one-to-one pairs even for SILVER-only PREVIEW models.
+        # They are NOT auto-accepted and remain Level 2 without GOLD tests.
+        suggestion_schema=columns(b,[('nop_kandidat','String'),('skor_ai','Double'),
+                                   ('keputusan_ai','String'),('alasan_ai','String')])
+        proposal_features=[]
+        for candidate in proposals:
+            source=refb[candidate['record_bpn']]
+            attrs=dict(source['a'],nop_kandidat=str(candidate.get('NOP') or ''),
+                       skor_ai=candidate['skor_ai'],keputusan_ai=candidate['keputusan_ai'],
+                       alasan_ai=candidate.get('alasan_tidak_promosi',''))
+            proposal_features.append({'idx':source['idx'],'fid':source['fid'],'a':attrs,
+                                      'geom':source['geom']})
+        paths.append(self.persist(layer_from_records(proposal_features,b.crs(),suggestion_schema,
+                         'Usulan pasangan AI (belum tentu Level 1)','MultiPolygon'),
+                         '05_usulan_ai',out))
+        baseline_pairs={(r['record_bpn'],r['record_pbb']) for r in baseline}
+        used_rule_b={r['record_bpn'] for r in baseline}
+        used_rule_p={r['record_pbb'] for r in baseline}
+        conflicts=[]
+        if mode=='HYBRID':
+            recorded=set()
+            for candidate in scores:
+                i,j=candidate['record_bpn'],candidate['record_pbb']
+                if (float(candidate.get('skor_ai') or 0)<self.val('confidence') or
+                        (i,j) in baseline_pairs or
+                        (i not in used_rule_b and j not in used_rule_p) or i in recorded):
+                    continue
+                recorded.add(i)
+                conflicts.append(candidate)
+            conflict_features=[]
+            for candidate in conflicts:
+                source=refb[candidate['record_bpn']]
+                attrs=dict(source['a'],nop_kandidat=str(candidate.get('NOP') or ''),
+                           skor_ai=candidate.get('skor_ai'),keputusan_ai='KONFLIK_DENGAN_RULE',
+                           alasan_ai='NIB/NOP sudah digunakan pasangan Modul 3')
+                conflict_features.append({'idx':source['idx'],'fid':source['fid'],'a':attrs,
+                                          'geom':source['geom']})
+            paths.append(self.persist(layer_from_records(conflict_features,b.crs(),suggestion_schema,
+                         'Konflik prediksi AI dan hasil aturan','MultiPolygon'),
+                         '06_konflik_ai_rule',out))
         pmode=point_mode(pr)
-        stat={'Mode geometri PBB':'Titik (aturan Modul 3.1)' if pmode else 'Poligon (aturan Modul 3)',
-              'Level 1':len(lvl1),'Level 1 baru dari AI':len(extras),
+        stat={'Mode Modul 5':mode,'Mode training AI':meta.get('training_mode','TIDAK_TERCATAT'),
+              'Mode geometri PBB':'Titik NOP' if pmode else 'Poligon PBB',
+              'Level 1':len(lvl1),'Level 1 aturan':len(baseline),
+              'Level 1 baru dari AI':len(extras),'Usulan AI satu-ke-satu':len(proposals),
+              'Konflik Rule-AI untuk studio':len(conflicts),
               'BPN Level 2':len(lvl2b),'PBB Level 2':len(lvl2p),
               'Status AI':meta['status'],'Kandidat AI berskor':len(scores)}
-        stat.update(name_summary(list(baseline)+list(extras),bool(opts['bpn_name'])))
+        stat['Promosi AI diizinkan operator']='Ya' if allowed else 'Tidak'
+        stat['Bidang dengan rekomendasi AI']=len(best_by_b) if scores else 0
+        stat['Penjelasan hasil AI']=model_notes[0]
+        stat.update(name_summary(list(baseline)+list(extras),bool(bname)))
         archive=zip_csv(out,{'skor_kandidat.csv':scores,
-                             'pasangan_rule.csv':pairs,'tambahan_ai.csv':extras})
+                             'pasangan_rule.csv':pairs,'tambahan_ai.csv':extras,
+                             'usulan_ai.csv':proposals,'konflik_rule_ai.csv':conflicts,
+                             'rekap_gerbang_ai.csv':[{'gerbang':key,'jumlah_gagal':v}
+                                                    for key,v in sorted(gate_failures.items())]})
         pdf=report5(out,lvl1,lvl2b,lvl2p,pairs,scores,extras,stat,
-                    ['Baseline deterministik %s dipertahankan.' % ('Modul 3.1 (PBB titik)' if pmode else 'Modul 3'),
-                     'AI tanpa evaluasi GOLD independen hanya memberikan rekomendasi studio.',
-                     'Ambang skor minimum %.2f, selisih kandidat %.2f.' %
-                       (self.val('confidence'),self.val('margin')),
-                     'Satu NIB hanya boleh memiliki satu NOP dan sebaliknya.']+name_notes(opts,pmode)+
+                    ['Mode %s, tanpa pemanggilan aturan pemaduan Modul 3.'%mode,
+                     'Full AI menilai kandidat independen; Hybrid menggabungkan hasil aturan yang diimpor.',
+                     'Ambang skor %.2f; margin %.2f; 1 NIB : 1 NOP.' %
+                     (self.val('confidence'),self.val('margin'))]+model_notes+
                     (['Model memakai fitur nama (QGIS_PLUGIN_V2): skor_nama dan nama_tidak_dinilai.']
                      if meta.get('feature_version')=='QGIS_PLUGIN_V2' else []),meta,logs,
                     crs=b.crs().authid(),
-                    metadata=self.report_metadata(b,p,opts['bpn_id'],opts['pbb_id'],
-                        opts['bpn_area'],opts['pbb_area'],
-                        'Skor ≥%.2f; margin ≥%.2f'%(self.val('confidence'),self.val('margin'))))
+                    metadata=self.report_metadata(b,p,bid,pid,ba,pa,
+                        '%s; skor ≥%.2f; margin ≥%.2f'%(mode,self.val('confidence'),self.val('margin'))))
         report={'pdf':pdf,'csv_zip':archive}
         return paths+[report['pdf'],report['csv_zip']]

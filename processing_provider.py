@@ -1,23 +1,29 @@
-"""Processing Toolbox provider: the seven menu tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
+"""Processing provider: the seven tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
 
-Opening a tool from the Toolbox shows the same window as the menu
-(``dialogs.ToolDialog``; Modul 6 opens the studio dock) through
-``createCustomParametersWidget``. Batch, Graphical Modeler, ``processing.run``
-and ``qgis_process`` use the Processing parameters instead: ``HeadlessTool``
-borrows the ``run1``..``run5`` orchestration of ``ToolDialog`` and feeds it those
-parameters through small stand-ins for the dialog widgets, so the matching rules,
-outputs and PDF reports stay identical to the menu tools. Modul 6 is interactive
-on the map and has no headless run.
+Modul 1-5 and 3.1 use the standard Processing form everywhere (Toolbox, Vector menu,
+Batch, Modeler, ``processing.run``, ``qgis_process``): label above each input, one
+destination per spatial output (with "Open output file after running"), one folder for
+the PDF report, the CSV zip and the other files, and a switch to skip every output.
+``HeadlessTool`` borrows the ``run1``..``run5`` orchestration of ``dialogs.ToolDialog``
+and feeds it those parameters through small stand-ins for the dialog widgets, so the
+matching rules, outputs and PDF reports stay identical to earlier versions. Modul 6 is
+interactive on the map (it opens the studio dock) and has no headless run.
+
+v0.9.9: Modul 4 (SILVER Only / GOLD Only / SILVER + GOLD) and Modul 5 (Full AI or Hybrid)
+expose the same choices as the v0.9.8 backend (``ml.py``, ``ai_matching.py``).
 """
+import shutil
+import tempfile
 from pathlib import Path
 from qgis.core import (Qgis, QgsProcessing, QgsProcessingAlgorithm, QgsProcessingContext,
                        QgsProcessingException, QgsProcessingParameterBoolean,
                        QgsProcessingParameterEnum, QgsProcessingParameterField,
                        QgsProcessingParameterFile, QgsProcessingParameterFolderDestination,
-                       QgsProcessingParameterNumber, QgsProcessingParameterVectorLayer,
-                       QgsProcessingProvider)
+                       QgsProcessingParameterNumber, QgsProcessingParameterVectorDestination,
+                       QgsProcessingParameterVectorLayer, QgsProcessingProvider)
 from .engine import Progress, Cancelled
-from .storage import FORMATS, save_layer
+from .storage import save_layer_to
+from .ai_matching import TRAINING_MODES, INFERENCE_MODES
 
 
 def _enum(new, old):
@@ -40,7 +46,11 @@ HIDE_FROM_MODELER = _enum(('ProcessingAlgorithmFlag', 'HideFromModeler'),
 FILE_TYPE = _enum(('ProcessingFileParameterBehavior', 'File'),
                   getattr(QgsProcessingParameterFile, 'File', 0))
 
-FORMAT_NAMES = list(FORMATS)
+ANY_GEOMETRY = _enum(('ProcessingSourceType', 'VectorAnyGeometry'),
+                     getattr(QgsProcessing, 'TypeVectorAnyGeometry', -1))
+
+# Conventional column names, selected when present (same idea as fieldwidgets.PREFERRED_FIELDS).
+DEFAULT_FIELDS = {'BPN_ID': 'NIB', 'BPN_AREA': 'LUAS', 'PBB_ID': 'D_NOP', 'PBB_AREA': 'D_LUAS'}
 
 # Same keys, labels and defaults as ToolDialog.setup_module / setup_name_stage.
 # ('n', key, label, default, min, max, decimals) | ('b', key, label, default)
@@ -70,7 +80,15 @@ POINT_TOL_3_1 = [('n', 'point_tol', 'Toleransi titik PBB di luar bidang (m; hany
 POINT_TOL_5 = [('n', 'point_tol', 'Toleransi titik PBB di luar bidang (m; hanya calon Level 2) '
                                   '- bila PBB titik', 5, 0, 1000, 2)]
 
-CSV = 'CSV (*.csv)'
+CSV = 'CSV (*.csv);;Semua (*)'
+ZIP_CSV = 'ZIP/CSV (*.zip *.csv);;Semua (*)'
+# ('e', key, label, [(value, display), ...], default index) = combo box; the first item is
+# the default, in the same order as the dialog's combo boxes.
+TRAINING_CHOICES = [(TRAINING_MODES[1], 'GOLD Only (terverifikasi)'),
+                    (TRAINING_MODES[0], 'SILVER Only (hasil aturan)'),
+                    (TRAINING_MODES[2], 'SILVER + GOLD (gabungan)')]
+INFERENCE_CHOICES = [(INFERENCE_MODES[0], 'Hybrid: hasil Modul 3 + tambahan AI'),
+                     (INFERENCE_MODES[1], 'Full AI: prediksi tanpa aturan Modul 3')]
 MODULES = {
     1: dict(name='modul_1_kelengkapan', title='1. Pemeriksaan kelengkapan', pbb=(POLYGON, POINT),
             names=False, reproject=False,
@@ -88,32 +106,79 @@ MODULES = {
     31: dict(name='modul_3_1_pemaduan_titik', title='3.1 Penentuan level pemaduan PBB titik (NOP)',
              pbb=(POINT,), names=True, reproject=True,
              params=RULES+GAPS+POINT_TOL_3_1+NAMES+NAME_STAGE+STAGE2_WEIGHTS),
+    # Modul 4 needs the current BPN/PBB layers in every mode (features are extracted from them);
+    # which of SILVER / GOLD is required follows the training mode and is checked by run4.
     4: dict(name='modul_4_training_ai', title='4. Training AI', pbb=(POLYGON, POINT), names=True,
-            reproject=True, optional_layers=True,
-            params=[('f', 'silver', 'CSV kandidat Modul 3 (silver)', CSV),
+            reproject=True,
+            params=[('e', 'training_mode', 'Sumber pelatihan', TRAINING_CHOICES),
+                    ('f', 'silver', 'Rekap Modul 3 untuk SILVER (ZIP/CSV) - SILVER Only / SILVER + GOLD',
+                     ZIP_CSV),
                     ('b', 'name_silver', 'Sertakan padanan tahap 2 (RULE_NAMA) dari CSV Modul 3 sebagai silver',
                      False),
                     ('n', 'name_silver_weight', 'Bobot silver RULE_NAMA', .10, 0, 1., 2),
-                    ('f', 'gold_features', 'CSV fitur historis terverifikasi (opsional)', CSV),
-                    ('f', 'gold_operator', 'CSV label operator pada layer yang dipilih (opsional)', CSV),
-                    ('b', 'hist_toggle', 'Gunakan pasangan GeoJSON historis + CSV label (opsional)', False),
+                    ('f', 'gold_features', 'CSV fitur historis terverifikasi (opsional) - GOLD', CSV),
+                    ('f', 'gold_operator', 'CSV label operator pada layer yang dipilih (opsional) - GOLD', CSV),
+                    ('b', 'hist_toggle', 'Gunakan pasangan GeoJSON historis + CSV label (opsional) - GOLD',
+                     False),
                     ('s', 'hist_bpn', 'BPN historis'),
                     ('s', 'hist_pbb', 'PBB historis'),
                     ('f', 'hist_csv', 'CSV pasangan historis berlabel', CSV),
                     ('n', 'radius', 'Radius pencarian kandidat (meter)', 15, 0, 1000, 2),
                     ('n', 'target', 'Target precision GOLD', .99, .5, 1., 3)]),
-    5: dict(name='modul_5_inference_ai', title='5. Inference AI dan Level 1/2', pbb=(POLYGON, POINT),
+    # Modul 5 (v0.9.8): the AI scores candidates independently; overlap, area deviation and
+    # name are model features, not Modul 3 gates, so only the name thresholds remain.
+    5: dict(name='modul_5_inference_ai', title='5. Prediksi AI independen / Hybrid', pbb=(POLYGON, POINT),
             names=True, reproject=True,
-            params=OVERLAP+RULES+POINT_TOL_5+NAMES+NAME_STAGE+STAGE2_BUFFER+STAGE2_WEIGHTS+[
-                ('f', 'model', 'Model terlatih (.joblib) - hanya dari sumber yang dipercaya',
-                 'Joblib (*.joblib)'),
-                ('f', 'meta', 'Metadata model (.json)', 'JSON (*.json)'),
-                ('n', 'radius', 'Radius kandidat AI (meter)', 15, 0, 1000, 2),
-                ('n', 'confidence', 'Skor minimum AI', .95, .5, 1., 3),
-                ('n', 'margin', 'Selisih skor kandidat ke-1 vs ke-2', .15, 0, 1., 3),
-                ('b', 'promote', 'Izinkan tambahan Level 1 berbasis AI HANYA bila GOLD telah lolos pengujian',
-                 False)]),
+            params=[('e', 'inference_mode', 'Mode prediksi', INFERENCE_CHOICES),
+                    ('f', 'rule_source', 'Rekap Modul 3 (ZIP/CSV) - wajib untuk mode Hybrid', ZIP_CSV),
+                    ('f', 'model', 'Model terlatih (.joblib) - hanya dari sumber yang dipercaya',
+                     'Joblib (*.joblib);;Semua (*)'),
+                    ('f', 'meta', 'Metadata model (.json)', 'JSON (*.json);;Semua (*)'),
+                    ('n', 'name_match', 'Nama COCOK bila kesamaan nama ≥ (%)', 90, 0, 100, 1),
+                    ('n', 'name_partial', 'Nama MIRIP bila kesamaan nama ≥ (%)', 60, 0, 100, 1),
+                    ('n', 'radius', 'Radius kandidat AI (meter)', 15, 0, 1000, 2),
+                    ('n', 'confidence', 'Skor minimum AI', .90, .5, 1., 3),
+                    ('n', 'margin', 'Selisih skor kandidat ke-1 vs ke-2', .15, 0, 1., 3),
+                    ('b', 'promote', 'Izinkan Level 1 AI otomatis hanya bila model lolos GOLD independen',
+                     False)]),
 }
+
+
+_LEVELS = [('01_padanan_level1', 'Output layer Level 1 (padanan BPN-PBB)'),
+           ('02_bpn_level2', 'Output layer BPN Level 2'),
+           ('03_pbb_level2', 'Output layer PBB Level 2')]
+# Spatial outputs per module: (basename used by dialogs.persist, label). Each becomes its own
+# optional destination parameter OUT_<BASENAME>.
+OUTPUT_LAYERS = {
+    1: [('bpn_audit_atribut', 'Output layer BPN audit'), ('pbb_audit_atribut', 'Output layer PBB audit')],
+    2: [('bpn_kualitas_spasial', 'Output layer BPN kualitas spasial'),
+        ('pbb_kualitas_spasial', 'Output layer PBB kualitas spasial'),
+        ('bpn_kandidat_gap', 'Output layer kandidat gap BPN (hanya bila delineasi gap dicentang)')],
+    3: _LEVELS+[('04_kandidat_gap', 'Output layer kandidat gap BPN (hanya bila gap disertakan)')],
+    31: _LEVELS+[('04_kandidat_gap', 'Output layer kandidat gap BPN (hanya bila gap disertakan)')],
+    4: [],
+    5: _LEVELS+[('04_rekomendasi_ai_studio', 'Output layer rekomendasi AI untuk studio'),
+                ('05_usulan_ai', 'Output layer usulan pasangan AI (belum tentu Level 1)'),
+                ('06_konflik_ai_rule', 'Output layer konflik AI vs aturan (hanya mode Hybrid)')],
+}
+FOLDER_LABELS = {
+    1: 'Folder hasil (PDF laporan & ZIP rekap CSV)',
+    2: 'Folder hasil (PDF laporan & ZIP rekap CSV)',
+    3: 'Folder hasil (PDF laporan, ZIP rekap CSV & manifest)',
+    31: 'Folder hasil (PDF laporan, ZIP rekap CSV & manifest)',
+    4: 'Folder hasil (model .joblib, metadata, PDF laporan & ZIP rekap CSV)',
+    5: 'Folder hasil (PDF laporan & ZIP rekap CSV)',
+}
+SKIP_LABEL = ('Lewati semua keluaran (uji coba: hanya menghitung dan menulis ringkasan ke log; '
+              'tidak ada file yang disimpan dan tidak ada layer yang dimuat)')
+
+
+def output_param(basename):
+    return 'OUT_'+basename.upper()
+
+
+def default_folder(modul):
+    return str(Path.home()/'NIBNOP_HASIL'/('modul_'+('3_1' if modul == 31 else str(modul))))
 
 
 class _Value:
@@ -123,6 +188,7 @@ class _Value:
     def text(self):return self.v or ''
     def isChecked(self):return bool(self.v)
     def currentText(self):return self.v
+    def currentData(self):return self.v
     def currentLayer(self):return self.v
 
 
@@ -136,6 +202,13 @@ class _Selector:
         return (self.layer.currentLayer(),)+self.fields
     def name_field(self):
         return self.name
+
+
+class _Log:
+    """Stand-in for the dialog's log box (run4/run5 write notes to it)."""
+    def __init__(self, feedback):self.feedback = feedback
+    def appendPlainText(self, text):self.feedback.pushInfo(str(text))
+    def clear(self):pass
 
 
 class FeedbackProgress(Progress):
@@ -154,14 +227,15 @@ _BORROWED = ('two_layers', 'opts', 'report_metadata', 'execute', 'run1', 'run2',
 
 class HeadlessTool:
     """ToolDialog without widgets; run methods are borrowed on first use."""
-    def __init__(self, modul, values, output, output_format, context, feedback):
+    def __init__(self, modul, values, output, resolve, feedback, skip=False):
+        """``resolve(basename)`` returns the destination file of a spatial output ('' = skipped)."""
         if not hasattr(HeadlessTool, 'run1'):
             from .dialogs import ToolDialog
             for name in _BORROWED:
                 setattr(HeadlessTool, name, getattr(ToolDialog, name))
-        self.modul = modul;self.context = context;self.feedback = feedback
-        self.progress = FeedbackProgress(feedback)
-        self.output = _Value(str(output));self.output_format = _Value(output_format)
+        self.modul = modul;self.feedback = feedback
+        self.progress = FeedbackProgress(feedback);self.log = _Log(feedback)
+        self.output = _Value(str(output));self.resolve = resolve;self.skip = skip
         self.param = {};self.saved = []
         for key, value in values.items():
             if isinstance(value, _Selector) or key in ('bpn', 'pbb'):
@@ -174,15 +248,20 @@ class HeadlessTool:
     def val(self, key):return self.param[key].value()
 
     def persist(self, layer, basename, output):
-        saved = save_layer(layer, output, basename, self.output_format.currentText())
-        self.saved.append(saved)
-        details = QgsProcessingContext.LayerDetails(basename, self.context.project(), basename)
-        self.context.addLayerToLoadOnCompletion(saved, details)
+        destination = '' if self.skip else self.resolve(basename)
+        if not destination:
+            self.feedback.pushInfo('Keluaran dilewati: %s' % basename)
+            return '(dilewati) %s' % basename
+        if str(destination).lower().endswith('.shp'):
+            self.feedback.pushWarning('Shapefile dapat memotong nama atribut menjadi 10 karakter dan '
+                                      'menyebabkan tabrakan kolom (%s). GeoPackage disarankan.' % basename)
+        saved = save_layer_to(layer, destination, basename)
+        self.saved.append((basename, saved))
         return saved
 
 
 class NibNopAlgorithm(QgsProcessingAlgorithm):
-    OUTPUT_FORMAT = 'OUTPUT_FORMAT'
+    SKIP_OUTPUT = 'SKIP_OUTPUT'
     OUTPUT_FOLDER = 'OUTPUT_FOLDER'
 
     def __init__(self, modul):
@@ -195,37 +274,35 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
     def group(self):return 'NIB-NOP Integrator'
     def groupId(self):return 'nib_nop_integrator'
     def flags(self):
-        # Layers and reports are read/painted like the dialogs do: on the main thread.
+        # Layers and reports are read/painted on the main thread (Qt printing, layer access).
         return super().flags() | NO_THREADING
     def shortHelpString(self):
-        return ('Sama dengan menu NIB–NOP Integrator → %s: aturan, keluaran layer, rekap_csv.zip dan '
-                'laporan PDF identik. Layer hasil dimuat ke proyek setelah selesai.' % self.spec['title'])
+        return ('%s\n\nKeluaran: setiap layer spasial punya tujuan sendiri (kosongkan = file sementara, '
+                '"Skip Output" = dilewati, centang "Open output file" untuk memuatnya). Folder hasil '
+                'menampung laporan PDF, rekap_csv.zip dan berkas lain. "Lewati semua keluaran" '
+                'menjalankan perhitungan tanpa menyimpan apa pun.' % self.spec['title'])
 
-    def createCustomParametersWidget(self, parent=None):
-        """Toolbox double-click: the menu's own dialog instead of the generic form."""
-        from qgis.utils import iface
-        if iface is None:
-            return None
-        from .dialogs import ToolDialog
-        return ToolDialog(iface, self.modul, parent or iface.mainWindow())
-
-    def add_layer(self, prefix, label, types, optional=False, with_area=True, with_name=False):
+    def add_layer(self, prefix, label, types, short, optional=False, with_area=True, with_name=False):
+        """Layer, then its field choices; every label sits above its input in the form."""
         self.addParameter(QgsProcessingParameterVectorLayer(prefix, label, list(types), optional=optional))
-        self.addParameter(QgsProcessingParameterField(prefix+'_ID', label+' - kolom identitas',
-                                                      parentLayerParameterName=prefix, optional=optional))
+        self.addParameter(QgsProcessingParameterField(
+            prefix+'_ID', 'Kolom identitas '+short, defaultValue=DEFAULT_FIELDS.get(prefix+'_ID'),
+            parentLayerParameterName=prefix, optional=optional))
         if with_area:
-            self.addParameter(QgsProcessingParameterField(prefix+'_AREA', label+' - kolom luas tertulis',
-                                                          parentLayerParameterName=prefix, optional=optional))
+            self.addParameter(QgsProcessingParameterField(
+                prefix+'_AREA', 'Kolom luas tertulis '+short, defaultValue=DEFAULT_FIELDS.get(prefix+'_AREA'),
+                parentLayerParameterName=prefix, optional=optional))
         if with_name:
-            self.addParameter(QgsProcessingParameterField(prefix+'_NAME', label+' - kolom nama (opsional, validasi)',
-                                                          parentLayerParameterName=prefix, optional=True))
+            self.addParameter(QgsProcessingParameterField(
+                prefix+'_NAME', 'Kolom nama %s (opsional, untuk validasi nama)' % short,
+                parentLayerParameterName=prefix, optional=True))
 
     def initAlgorithm(self, config=None):
         spec = self.spec;optional = spec.get('optional_layers', False)
         pbb_label = {3:'Layer PBB (poligon)', 31:'Layer PBB (titik NOP)'}.get(self.modul,
                                                                               'Layer PBB (poligon atau titik)')
-        self.add_layer('BPN', 'Layer BPN (poligon)', (POLYGON,), optional, with_name=spec['names'])
-        self.add_layer('PBB', pbb_label, spec['pbb'], optional, with_name=spec['names'])
+        self.add_layer('BPN', 'Layer BPN (poligon)', (POLYGON,), 'BPN', optional, with_name=spec['names'])
+        self.add_layer('PBB', pbb_label, spec['pbb'], 'PBB', optional, with_name=spec['names'])
         if spec['reproject']:
             self.addParameter(QgsProcessingParameterBoolean(
                 'REPROJECT', 'Jika CRS berbeda, reproyeksikan PBB sementara ke CRS BPN', defaultValue=False))
@@ -240,12 +317,21 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
             elif kind == 'f':
                 self.addParameter(QgsProcessingParameterFile(key.upper(), label, FILE_TYPE,
                                                              fileFilter=item[3], optional=True))
+            elif kind == 'e':
+                self.addParameter(QgsProcessingParameterEnum(key.upper(), label, [d for _, d in item[3]],
+                                                             defaultValue=0))
             elif kind == 's':
+                short = 'BPN historis' if key == 'hist_bpn' else 'PBB historis'
                 self.add_layer(key.upper(), label, (POLYGON,) if key == 'hist_bpn' else (POLYGON, POINT),
-                               optional=True, with_name=True)
-        self.addParameter(QgsProcessingParameterEnum(self.OUTPUT_FORMAT, 'Format layer', FORMAT_NAMES,
-                                                     defaultValue=0))
-        self.addParameter(QgsProcessingParameterFolderDestination(self.OUTPUT_FOLDER, 'Folder hasil'))
+                               short, optional=True, with_name=True)
+        # Outputs: skip switch, one folder (PDF + CSV zip + other files), one destination per layer.
+        self.addParameter(QgsProcessingParameterBoolean(self.SKIP_OUTPUT, SKIP_LABEL, defaultValue=False))
+        self.addParameter(QgsProcessingParameterFolderDestination(
+            self.OUTPUT_FOLDER, FOLDER_LABELS[self.modul], defaultValue=default_folder(self.modul),
+            optional=True))
+        for basename, label in OUTPUT_LAYERS[self.modul]:
+            self.addParameter(QgsProcessingParameterVectorDestination(
+                output_param(basename), label, ANY_GEOMETRY, optional=True))
 
     def selector(self, prefix, parameters, context):
         def field(suffix):
@@ -254,6 +340,16 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
             return self.parameterAsString(parameters, name, context) or ''
         return _Selector(self.parameterAsVectorLayer(parameters, prefix, context),
                          field('_ID'), field('_AREA'), field('_NAME'))
+
+    def checkParameterValues(self, parameters, context):
+        for prefix, what in (('BPN', 'BPN'), ('PBB', 'PBB')):
+            ident = self.parameterAsString(parameters, prefix+'_ID', context)
+            if self.parameterDefinition(prefix+'_AREA') is not None:
+                area = self.parameterAsString(parameters, prefix+'_AREA', context)
+                if ident and area and ident == area:
+                    return False, ('Kolom identitas dan kolom luas %s tidak boleh sama (%s). '
+                                   'Pilih kolom luas tertulis yang benar.' % (what, ident))
+        return super().checkParameterValues(parameters, context)
 
     def processAlgorithm(self, parameters, context, feedback):
         values = {'bpn':self.selector('BPN', parameters, context),
@@ -267,15 +363,28 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
                 values[key] = self.parameterAsBoolean(parameters, name, context)
             elif kind == 'f':
                 values[key] = self.parameterAsFile(parameters, name, context) or ''
+            elif kind == 'e':
+                values[key] = item[3][self.parameterAsEnum(parameters, name, context)][0]
             elif kind == 's':
                 values[key] = self.selector(name, parameters, context)
-        output_format = FORMAT_NAMES[self.parameterAsEnum(parameters, self.OUTPUT_FORMAT, context)]
-        folder = Path(self.parameterAsFileOutput(parameters, self.OUTPUT_FOLDER, context)).expanduser()
-        folder.mkdir(parents=True, exist_ok=True)
-        if output_format.startswith('ESRI Shapefile'):
-            feedback.pushWarning('Shapefile dapat memotong nama atribut menjadi 10 karakter dan menyebabkan '
-                                 'tabrakan kolom. GeoPackage disarankan untuk hasil integrasi.')
-        tool = HeadlessTool(self.modul, values, folder, output_format, context, feedback)
+        skip = self.parameterAsBoolean(parameters, self.SKIP_OUTPUT, context)
+        chosen = '' if skip else (self.parameterAsFileOutput(parameters, self.OUTPUT_FOLDER, context) or '')
+        scratch = None
+        if chosen:
+            folder = Path(chosen).expanduser();folder.mkdir(parents=True, exist_ok=True)
+        else:
+            # Reports/CSV/model are still produced (the run functions need a place) but discarded.
+            scratch = tempfile.mkdtemp(prefix='nibnop_');folder = Path(scratch)
+            feedback.pushWarning('Semua keluaran dilewati: tidak ada file yang disimpan.' if skip else
+                                 'Folder hasil dilewati: PDF, ZIP rekap'+
+                                 (', model dan metadata' if self.modul == 4 else '')+' tidak disimpan.')
+
+        def resolve(basename):
+            name = output_param(basename)
+            if self.parameterDefinition(name) is None:return ''
+            return self.parameterAsOutputLayer(parameters, name, context) or ''
+
+        tool = HeadlessTool(self.modul, values, folder, resolve, feedback, skip)
         try:
             result = tool.execute()
         except Cancelled as e:
@@ -283,8 +392,12 @@ class NibNopAlgorithm(QgsProcessingAlgorithm):
             return {}
         except Exception as e:
             raise QgsProcessingException(str(e))
+        finally:
+            if scratch:shutil.rmtree(scratch, ignore_errors=True)
         feedback.pushInfo('SELESAI\n'+'\n'.join(str(x) for x in result))
-        return {self.OUTPUT_FOLDER:str(folder)}
+        outputs = {output_param(basename):path for basename, path in tool.saved}
+        if chosen:outputs[self.OUTPUT_FOLDER] = str(folder)
+        return outputs
 
 
 class _OpenStudio:

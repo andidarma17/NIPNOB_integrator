@@ -4,16 +4,90 @@ Requires sklearn, numpy, joblib; XGBoost optional. Model files must be trusted.
 import csv
 import json
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from .engine import FEATURE_NAMES, FEATURE_VERSIONS, make_candidate_rows, prepare_local
 from .logic import normalize_verified_label
 
 
-def csv_rows(path):
+def csv_rows(path, required_columns=()):
     if not path:return []
+    if Path(path).suffix.lower()=='.zip':
+        from .ai_matching import _csv_from_zip,_rows_from_csv
+        rows=_rows_from_csv(_csv_from_zip(Path(path).read_bytes()))
+        if not rows:
+            raise ValueError('CSV dalam arsip Modul 3 tidak memiliki baris data.')
+        missing=set(required_columns)-set(rows[0])
+        if missing:
+            raise ValueError('CSV Modul 3 tidak memiliki kolom wajib: '+', '.join(sorted(missing)))
+        return [{str(k).strip():v.strip() if isinstance(v,str) else v
+                 for k,v in row.items()} for row in rows]
     with open(path,encoding='utf-8-sig',newline='') as f:
-        return list(csv.DictReader(f))
+        header=f.readline()
+        # Some Indonesian spreadsheet exports use semicolons, while NOP may
+        # itself contain a decimal comma following destructive Excel casting.
+        delimiter=';' if header.count(';')>header.count(',') else ','
+        f.seek(0)
+        reader=csv.DictReader(f,delimiter=delimiter)
+        fields=[str(v).strip() for v in (reader.fieldnames or []) if v is not None]
+        if len(fields)!=len(set(fields)):
+            raise ValueError('CSV mempunyai nama kolom ganda: '+str(path))
+        missing=set(required_columns)-set(fields)
+        if missing:
+            raise ValueError('CSV %s tidak memiliki kolom wajib: %s. Periksa delimiter dan skema data.' %
+                             (Path(path).name,', '.join(sorted(missing))))
+        if not fields:
+            raise ValueError('CSV tanpa header: '+str(path))
+        result=[]
+        for line,row in enumerate(reader,2):
+            if None in row:
+                raise ValueError('CSV %s baris %d memiliki jumlah kolom berlebih; periksa delimiter.' %
+                                 (Path(path).name,line))
+            result.append({str(k).strip():v.strip() if isinstance(v,str) else v
+                           for k,v in row.items()})
+        return result
+
+
+def _candidate_lookup(candidates):
+    by_pair={};by_records={};by_ids=defaultdict(list)
+    for row in candidates:
+        by_pair[str(row['pair_id'])]=row
+        by_records[(str(row['record_bpn']),str(row['record_pbb']))]=row
+        by_ids[(str(row.get('NIB','')).strip(),str(row.get('NOP','')).strip())].append(row)
+    return by_pair,by_records,by_ids
+
+
+def resolve_verified_pair(entry, lookups):
+    """Find a verified pair while checking IDs, even if record indexes changed.
+
+    NIB/NOP win over positional indexes when they identify exactly one pair;
+    a stale pair_id is never permitted to point to contradictory IDs.
+    """
+    by_pair,by_records,by_ids=lookups
+    nib=str(entry.get('NIB') or '').strip()
+    nop=str(entry.get('NOP') or '').strip()
+    if any(ch in nop.upper() for ch in ('E+', 'E-', ',')):
+        return None,'NOP_RUSAK_NOTASI_ILMIAH'
+    if nib and nop:
+        matches=by_ids.get((nib,nop),[])
+        if len(matches)==1:
+            return matches[0],'NIB_NOP_UNIK'
+        if len(matches)>1:
+            # Rare non-unique IDs need evidence from matching record numbers.
+            known=by_pair.get(str(entry.get('pair_id') or ''))
+            if known in matches:return known,'NIB_NOP_DAN_PAIR_ID'
+            known=by_records.get((str(entry.get('record_bpn')),str(entry.get('record_pbb'))))
+            if known in matches:return known,'NIB_NOP_DAN_RECORD'
+            return None,'PASANGAN_NIB_NOP_TIDAK_UNIK'
+    found=by_pair.get(str(entry.get('pair_id') or ''))
+    if found is None:
+        found=by_records.get((str(entry.get('record_bpn')),str(entry.get('record_pbb'))))
+    if found is None:return None,'PASANGAN_TIDAK_DITEMUKAN_DALAM_RADIUS'
+    if nib and str(found.get('NIB','')).strip()!=nib:
+        return None,'NIB_BERBEDA_DARI_KANDIDAT'
+    if nop and str(found.get('NOP','')).strip()!=nop:
+        return None,'NOP_BERBEDA_DARI_KANDIDAT'
+    return found,'PAIR_ID_ATAU_RECORD_TERVALIDASI'
 
 
 def feature_version(names_used):
@@ -50,7 +124,8 @@ def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
     Tahap 2 pairs (``metode_padu=RULE_NAMA``) are silver only when
     ``name_silver_weight`` is given, as ``SILVER_RULE_NAMA`` with that weight.
     """
-    ref={r['pair_id']:r for r in candidates}
+    lookups=_candidate_lookup(candidates)
+    ref=lookups[0]
     gold=[];silver=[];unresolved=[]
     if silver_csv:
         existing=csv_rows(silver_csv)
@@ -75,28 +150,25 @@ def labels_for_pairs(candidates, historical_csv=None, silver_csv=None,
                 silver.append(dict(r,label=0,label_source='SILVER_CONTRAST',sample_weight=.2))
     for label_source, pair_set in [('CURRENT',candidates),('HISTORICAL',historical_candidates or [])]:
         if label_source=='CURRENT' and not historical_csv:continue
-        input_rows=csv_rows(historical_csv) if label_source=='CURRENT' else []
+        input_rows=csv_rows(historical_csv,('label','status_verifikasi','sumber_verifikasi')) if label_source=='CURRENT' else []
+        seen_gold=set()
         for entry in input_rows:
             label=normalize_verified_label(entry)
             if label is None:
-                unresolved.append(entry)
+                unresolved.append(dict(entry,alasan_penolakan='LABEL_STATUS_ATAU_BUKTI_TIDAK_VALID'))
                 continue
-            found=None
-            if entry.get('pair_id'):
-                found=next((r for r in pair_set if str(r['pair_id'])==entry['pair_id']),None)
-            elif entry.get('record_bpn') and entry.get('record_pbb'):
-                found=next((r for r in pair_set if str(r['record_bpn'])==entry['record_bpn']
-                            and str(r['record_pbb'])==entry['record_pbb']),None)
-            elif entry.get('NIB') and entry.get('NOP'):
-                matching=[r for r in pair_set if str(r['NIB'])==entry['NIB'] and str(r['NOP'])==entry['NOP']]
-                if len(matching)==1: found=matching[0]
+            found,method=resolve_verified_pair(entry,lookups)
             if found:
+                if found['pair_id'] in seen_gold:
+                    raise ValueError('GOLD mempunyai label ganda untuk pasangan '+found['pair_id'])
+                seen_gold.add(found['pair_id'])
                 gold.append(dict(found,label=label,label_source='GOLD_OPERATOR',
                                  sample_weight=1.,sumber_verifikasi=entry['sumber_verifikasi'],
+                                 metode_pencocokan_gold=method,
                                  group_id=entry.get('wilayah','') or ('tile_%s_%s' %
                                  (int(float(found['x_bpn'])//250),int(float(found['y_bpn'])//250)))))
             else:
-                unresolved.append(entry)
+                unresolved.append(dict(entry,alasan_penolakan=method))
     return silver,gold,unresolved
 
 
@@ -104,43 +176,49 @@ def add_historical_labeled_features(gold, path, features=FEATURE_NAMES):
     """Use a labelled feature CSV from another geography, if feature schema matches."""
     if not path:return 0
     good=0
-    for entry in csv_rows(path):
+    rows=csv_rows(path,('label','status_verifikasi','sumber_verifikasi',*features))
+    for row_number,entry in enumerate(rows,2):
         label=normalize_verified_label(entry)
         if label is None:continue
-        if not all(k in entry for k in features):
-            raise ValueError('CSV historis harus memiliki seluruh nama fitur dari Modul 4.')
+        for key in features:
+            val=entry.get(key)
+            if val in ('',None,'None'):continue
+            try:
+                if not math.isfinite(float(val)):raise ValueError()
+            except (TypeError,ValueError):
+                raise ValueError('Fitur %s di baris %d CSV GOLD bukan angka valid: %s. '
+                                 'Hitung ulang fitur dari geometri, jangan dari angka yang berubah di Excel.' %
+                                 (key,row_number,str(val)[:30]))
         gold.append(dict(entry,label=label,label_source='GOLD_HISTORICAL',
                          sample_weight=1.,group_id=entry.get('wilayah','') or ('HIST_TILE_%s_%s' %
                          (int(float(entry.get('x_bpn',0))//250),int(float(entry.get('y_bpn',0))//250))) if entry.get('x_bpn') and entry.get('y_bpn') else 'HISTORIS_UNGROUPED',
                          pair_id=entry.get('pair_id','H'+str(good))))
         good+=1
+    if rows and not good:
+        raise ValueError('CSV fitur GOLD berisi %d baris tetapi nol label lolos verifikasi. '
+                         'Periksa status_verifikasi dan sumber_verifikasi.' % len(rows))
     return good
 
 
 def add_historical_pair_labels(gold, historical_candidates, path):
     """Historical geometry pairs + verified operator CSV."""
     if not path:return 0
-    rows=csv_rows(path)
-    bypair={r['pair_id']:r for r in historical_candidates}
-    byrecord={(str(r['record_bpn']),str(r['record_pbb'])):r for r in historical_candidates}
-    byids={}
-    for r in historical_candidates:byids.setdefault((str(r['NIB']),str(r['NOP'])),[]).append(r)
+    rows=csv_rows(path,('label','status_verifikasi','sumber_verifikasi'))
+    lookups=_candidate_lookup(historical_candidates)
     seen=set();n=0
     for a in rows:
         label=normalize_verified_label(a)
         if label is None:continue
-        candidate=bypair.get(a.get('pair_id'))
-        if candidate is None:
-            candidate=byrecord.get((str(a.get('record_bpn')),str(a.get('record_pbb'))))
-        if candidate is None:
-            matches=byids.get((str(a.get('NIB')),str(a.get('NOP'))),[])
-            if len(matches)==1:candidate=matches[0]
+        candidate,_=resolve_verified_pair(a,lookups)
         if candidate is None:continue
         k=candidate['pair_id']
         if k in seen:raise ValueError('Label historis menduplikasi pasangan: '+k)
         seen.add(k);n+=1
         gold.append(dict(candidate,label=label,label_source='GOLD_HISTORICAL_GEO',
                          sample_weight=1.,group_id=a.get('wilayah','') or 'HIST_'+str(int(candidate['x_bpn']//250))+'_'+str(int(candidate['y_bpn']//250))))
+    if rows and not n:
+        raise ValueError('CSV pasangan historis tidak menghasilkan GOLD. '
+                         'Periksa sumber label, NIB/NOP asli, dan radius kandidat.')
     return n
 
 
@@ -175,7 +253,65 @@ def split_verified(gold,seed=42):
     return None
 
 
-def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGIN_V1'):
+def _exclude_silver_near_gold_holdout(silver, holdout):
+    """Avoid direct ID and tile leakage from an independently held-out GOLD set.
+
+    Historical GOLD record indices may refer to a small GeoJSON subset rather
+    than the current BPN/PBB layers. Their NIB/NOP and tile coordinates are
+    therefore also checked, not just their local record indices.
+    """
+    if not holdout:
+        return list(silver)
+    blocked_pairs={str(r.get('pair_id')) for r in holdout}
+    blocked_b={(str(r.get('label_source')),str(r.get('record_bpn'))) for r in holdout}
+    blocked_p={(str(r.get('label_source')),str(r.get('record_pbb'))) for r in holdout}
+    blocked_nib={str(r.get('NIB')).strip() for r in holdout if r.get('NIB') not in ('',None)}
+    blocked_nop={str(r.get('NOP')).strip() for r in holdout if r.get('NOP') not in ('',None)}
+    blocked_tiles={str(r.get('group_id')) for r in holdout if str(r.get('group_id','')).startswith('tile_')}
+    safe=[]
+    for row in silver:
+        if str(row.get('pair_id')) in blocked_pairs:
+            continue
+        if (('GOLD_OPERATOR',str(row.get('record_bpn'))) in blocked_b or
+                ('GOLD_OPERATOR',str(row.get('record_pbb'))) in blocked_p):
+            continue
+        if (str(row.get('NIB','')).strip() in blocked_nib or
+                str(row.get('NOP','')).strip() in blocked_nop):
+            continue
+        try:
+            tile='tile_%d_%d'%(math.floor(float(row['x_bpn'])/250),
+                                math.floor(float(row['y_bpn'])/250))
+            if tile in blocked_tiles:
+                continue
+        except (ValueError,TypeError,KeyError,OverflowError):
+            pass
+        safe.append(row)
+    return safe
+
+
+def _balance_silver_weight(silver, gold_train):
+    """Cap *aggregate* SILVER influence per class at GOLD training influence.
+
+    A nominal per-row 0.2 versus 1.0 does not protect a small GOLD dataset
+    against tens of thousands of weak labels.
+    """
+    if not silver or not gold_train:
+        return list(silver)
+    result=[dict(row) for row in silver]
+    for label in (0,1):
+        gold_total=sum(float(row.get('sample_weight',1)) for row in gold_train
+                       if int(row['label'])==label)
+        silver_total=sum(float(row.get('sample_weight',.2)) for row in result
+                         if int(row['label'])==label)
+        factor=min(1., gold_total/silver_total) if silver_total else 1.
+        for row in result:
+            if int(row['label'])==label:
+                row['sample_weight']=float(row.get('sample_weight',.2))*factor
+    return result
+
+
+def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGIN_V1',
+                training_mode=None):
     """Fit models and evaluate BOTH on independent, spatially separated GOLD splits.
 
     Threshold 0.90 is an inference policy candidate, not an optimized threshold.
@@ -190,19 +326,25 @@ def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGI
     from sklearn.impute import SimpleImputer
     from .evaluation import metrics_from_gold, operational_assessment, recommendations, metric_judgements
 
+    from .ai_matching import training_mode as resolve_training_mode
+    requested=training_mode or resolve_training_mode(bool(silver),bool(gold))
+    if requested not in ('SILVER_ONLY','GOLD_ONLY','SILVER_GOLD'):
+        raise ValueError('Mode training AI tidak dikenal.')
+    if requested=='SILVER_ONLY' and gold:
+        raise ValueError('Mode SILVER_ONLY tidak boleh mencampur GOLD.')
+    if requested=='GOLD_ONLY' and silver:
+        raise ValueError('Mode GOLD_ONLY tidak boleh mencampur SILVER.')
+    if requested=='SILVER_GOLD' and (not silver or not gold):
+        raise ValueError('Mode SILVER_GOLD memerlukan kedua sumber data.')
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+    n_groups=len({str(r.get('group_id') or 'TANPA_GRUP') for r in gold})
     split=split_verified(gold)
     if split:
         train,val,test=split
-        # SILVER is permitted ONLY in training; keep entire held-out BPN/NOP out
-        # of fit to reduce leakage from multiple possible partners.
-        held_b={(str(r.get('label_source')),str(r.get('record_bpn'))) for r in val+test}
-        held_p={(str(r.get('label_source')),str(r.get('record_pbb'))) for r in val+test}
-        held_pairs={str(r.get('pair_id')) for r in val+test}
-        safe_silver=[r for r in silver if (str(r.get('pair_id')) not in held_pairs and
-            ('GOLD_OPERATOR',str(r.get('record_bpn'))) not in held_b and
-            ('GOLD_OPERATOR',str(r.get('record_pbb'))) not in held_p)]
-        fit=train+safe_silver
+        # Spatial GOLD holdout is truly independent of SILVER, including the
+        # historical-GeoJSON case whose record indices differ from current data.
+        safe_silver=_exclude_silver_near_gold_holdout(silver,val+test)
+        fit=train+_balance_silver_weight(safe_silver,train)
     else:
         train=[];val=[];test=[]
         fit=list(silver)+list(gold)
@@ -276,6 +418,8 @@ def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGI
         (heldout.get('prediksi_positif') or 0)>=10 and best_key[0]):
         status='GOLD_TESTED_REVIEW_REQUIRED'
     # Status is intentionally NOT equivalent to production approval.
+    effective_silver_weight=sum(float(row.get('sample_weight',.2)) for row in fit
+                                if str(row.get('label_source','')).startswith('SILVER'))
     evaluation={
         'judul':'Training dan Testing AI - Klasifikasi Pasangan NIB-NOP',
         'jenis':'BINARY_CLASSIFICATION',
@@ -286,6 +430,9 @@ def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGI
         'target_precision_usulan':min_precision,
         'jumlah_silver':len(silver),
         'jumlah_gold':len(gold),
+        'mode_training':requested,
+        'bobot_efektif_silver_training':effective_silver_weight,
+        'jumlah_grup_spasial_gold':n_groups,
         'jumlah_fit':len(fit),
         'jumlah_validasi':len(val),
         'jumlah_testing':len(test),
@@ -299,7 +446,9 @@ def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGI
             'Precision 100% pada n kecil bukan bukti jaminan tanpa kesalahan. Cek batas bawah Wilson 95%.',
             'ROC-AUC, AP, dan Brier menggunakan skor model, yang belum tentu terkalibrasi sebagai probabilitas.',
             'R2 / MAE / RMSE tidak dipakai sebagai metrik pokok karena tugasnya klasifikasi benar/salah.',
-            'Indikator ambang dalam laporan adalah panduan kebijakan, bukan standar ilmiah universal.'
+            'Indikator ambang dalam laporan adalah panduan kebijakan, bukan standar ilmiah universal.',
+            ('GOLD hanya mencakup %d grup spasial; uji ini bukan jaminan generalisasi '
+              'ke wilayah lain.' % n_groups)
         ]
     }
     modelpath=Path(output_dir)/'model_terpilih.joblib'
@@ -309,6 +458,9 @@ def train_model(silver, gold, output_dir, min_precision=.99, version='QGIS_PLUGI
     metadata={'status':status,'feature_version':version,'features':features,
               'mode_geometri_pbb':geom_mode,
               'algorithm':best_name,'n_silver':len(silver),'n_gold':len(gold),
+              'training_mode':requested,
+              'effective_silver_weight':effective_silver_weight,
+              'n_gold_groups':n_groups,
               'n_training':len(fit),'n_validation':len(val),'n_testing':len(test),
               'target_precision':min_precision,
               'holdout':{k:v for k,v in (heldout or {}).items() if k not in ('kurva',)},

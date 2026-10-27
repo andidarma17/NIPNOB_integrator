@@ -8,7 +8,6 @@ nibnop_integrator/                 ≈ 3.150 baris (Python) + dokumen
 ├── metadata.txt                   QGIS min 3.28 / max 4.99, experimental=True, kategori Vector
 ├── plugin.py          (46)        Menu "NIB–NOP Integrator" + Vector menu, 6 aksi; modul 6 = QDockWidget
 ├── dialogs.py        (456)        ToolDialog untuk Modul 1–5 (UI + orkestrasi run1…run5)
-├── processing_provider.py         Processing Toolbox: 7 tools; Toolbox membuka ToolDialog/dock, batch/Modeler lewat HeadlessTool
 ├── studio.py         (263)        VerificationDock (Modul 6, dock kanan, klik peta)
 ├── fieldwidgets.py   (104)        LayerFieldComboBox: dropdown SEMUA field + default (NIB/LUAS, D_NOP/D_LUAS)
 ├── engine.py         (385)        Algoritma native PyQGIS: baca, fix geometri, overlap, gap, kandidat, level
@@ -29,7 +28,6 @@ nibnop_integrator/                 ≈ 3.150 baris (Python) + dokumen
 
 ```
  UI              plugin.py ─► dialogs.ToolDialog (M1–5)      studio.VerificationDock (M6)
-                 Processing ─► Toolbox: ToolDialog / dock M6 · batch/Modeler/skrip: HeadlessTool (run1..run5 dialogs)
                          └── fieldwidgets.LayerFieldComboBox
  Orkestrasi      dialogs.run1..run5            studio.export
  Domain/Algoritma engine.py (PyQGIS)  ─ logic.py (murni) ─ ml.py + evaluation.py (sklearn)

@@ -1,0 +1,18 @@
+NIB-NOP INTEGRATOR v0.10.0 - FORMULIR PROCESSING, KELUARAN TERPISAH, PANEL STUDIO
+
+1. Modul 1-5 dan 3.1: formulir Processing standar (label di atas isian) di menu Vektor,
+   Toolbox, Batch, Modeler dan qgis_process. plugin.launch memanggil
+   processing.execAlgorithmDialog; ToolDialog lama hanya cadangan.
+2. Keluaran: tiap layer spasial = parameter OUT_<NAMA> (VectorDestination, opsional,
+   dapat sementara/Skip/Open after running); PDF + ZIP rekap (+ manifest Modul 3, atau
+   model dan metadata Modul 4) bersama di OUTPUT_FOLDER; SKIP_OUTPUT melewati semuanya.
+   OUTPUT_FORMAT dihapus (format mengikuti ekstensi; storage.save_layer_to).
+3. Kolom bawaan NIB/LUAS/D_NOP/D_LUAS; kolom identitas = kolom luas ditolak
+   (checkParameterValues).
+4. Modul 6: VerificationDock berada dalam QScrollArea (lebar minimum 360, tabel minimum
+   180 px) dan ditabkan dengan Processing Toolbox bila terbuka di main window.
+5. Uji: test_processing_spec.py (tanpa PyQGIS) memeriksa tiap persist() di run1..run5
+   punya parameter keluaran dan sebaliknya; test_processing.py (PyQGIS) diperbarui.
+
+Backend AI (ml.py, ai_matching.py, engine.py, logic.py) tidak berubah dari v0.9.8/0.9.9.
+Belum diuji di QGIS nyata; lihat ACCEPTANCE_TEST.md bagian v0.10.0.

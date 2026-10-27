@@ -270,7 +270,9 @@ def normalize_verified_label(row):
             label = '1'
         else:
             return None
-    if status != 'DIVERIFIKASI' or not evidence:
+    # Operator exports also use "Terverifikasi". Both spellings refer to a
+    # completed verification; the evidence/source field remains mandatory.
+    if status not in ('DIVERIFIKASI', 'TERVERIFIKASI') or not evidence:
         return None
     # Synthetic/demo examples must not be silently accepted as verified real data.
     if str(row.get('jenis_data','')).strip().upper() in ('SYNTHETIC','SINTETIS','DEMO'):

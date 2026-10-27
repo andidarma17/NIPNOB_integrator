@@ -1,4 +1,4 @@
-# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.9.7)
+# NIB–NOP Integrator — plugin QGIS 3 / 4 (beta 0.10.0)
 
 **Status:** implemented, compiled and unit-tested without QGIS; GUI, I/O and geometry processing require end-to-end validation within installed QGIS. **Do not yet use unattended on production land-tax records.**
 
@@ -11,13 +11,82 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 ## Instalasi
 
 1. Jangan mengekstrak ZIP plugin. Buka QGIS → **Plugins → Manage and Install Plugins → Install from ZIP**.
-2. Pilih `NIBNOP_Integrator_QGIS3_QGIS4_v0.9.4_LAPORAN_LENGKAP.zip`.
+2. Pilih ZIP plugin versi terbaru (`NIBNOP_Integrator_v0.10.0_AI_Independent_Toolbox.zip`).
 3. Jika QGIS memberi peringatan *experimental*, aktifkan plugin percobaan dengan kesadaran status beta.
-4. Menu atas atau **Vector → NIB–NOP Integrator** menyediakan enam tools.
+4. Menu atas, **Vector → NIB–NOP Integrator**, dan **Processing Toolbox → NIB–NOP Integrator** menyediakan ketujuh tools (Modul 1, 2, 3, 3.1, 4, 5, 6).
 5. Buka layer BPN/PBB terlebih dahulu, lalu pilih nama layer dan masing-masing field identitas serta luas melalui dropdown **yang menampilkan semua kolom tanpa filter tipe data**. Default NIB, D_NOP, LUAS, D_LUAS akan dipilih jika ditemukan. Jika nama kolom berbeda, pilih sendiri. Kolom luas bertipe teks boleh dipilih jika nilainya berupa angka; nilai yang tidak dapat dibaca sebagai angka akan ditandai kosong/tidak numerik.
 6. Layer BPN harus poligon; layer PBB boleh **poligon atau titik NOP** (lihat "Pembaruan v0.9.5"). Semua layer memakai **CRS proyeksi bermeter**. Bila CRS berbeda, centang transformasi sementara PBB ke CRS BPN.
 
 **AI dependencies:** instal ke Python yang dipakai *QGIS*, bukan sekadar Python/Colab lain. Pada Windows OSGeo4W shell, gunakan interpreter QGIS yang tersedia dan perintah `python -m pip install scikit-learn joblib xgboost` bila kebijakan instalasi mengizinkan. Penting: pada beberapa instalasi OSGeo4W, instalasi paket lewat pip dapat mengganggu paket yang dikelola OSGeo4W; gunakan lingkungan terkelola/OSGeo4W terlebih dahulu. QGIS harus di-restart setelah pemasangan.
+
+## Pembaruan v0.10.0 — formulir Processing dan keluaran terpisah
+
+* **Tata letak:** Modul 1–5 dan 3.1 kini memakai formulir Processing standar di mana pun dibuka (menu **Vector → NIB–NOP Integrator**, Processing Toolbox, Batch, Modeler, `qgis_process`): label di atas dan isian di bawahnya.
+* **Keluaran terpisah:** setiap layer spasial punya tujuan sendiri (file `.gpkg`/`.geojson`/`.shp`, file sementara, atau *Skip Output*) dengan kotak *Open output file after running algorithm*. Laporan PDF, `rekap_csv.zip` (serta manifest Modul 3, atau model/metadata Modul 4) bersama dalam satu **Folder hasil** (bawaan `~/NIBNOP_HASIL/modul_<n>`; dapat dilewati). Pilihan *Format layer* dihapus karena format mengikuti ekstensi file.
+* **Lewati semua keluaran:** kotak centang `SKIP_OUTPUT` menjalankan perhitungan dan menulis ringkasan ke log tanpa menyimpan file atau memuat layer (uji coba). Pada Modul 4 ini berarti model tidak tersimpan.
+* **Kolom bawaan:** NIB, LUAS, D_NOP, D_LUAS dipilih otomatis bila ada; bila tidak, formulir memilih kolom pertama, jadi **periksa kolom luas**. Pemilihan kolom identitas dan luas yang sama ditolak.
+* **Modul 6:** panel Verifikasi Studio sekarang berada dalam *scroll area* dan, bila Processing Toolbox terbuka di sisi kanan, digabung sebagai tab dengannya sehingga memakai tinggi penuh jendela. Bagian operator hingga tombol simpan CSV & PDF dapat dijangkau pada layar pendek.
+* Jendela lama (`dialogs.ToolDialog`) tetap ada hanya sebagai cadangan bila formulir Processing gagal dibuka dan sebagai sumber metode `run1…run5` yang dipakai bersama.
+* **Kompatibilitas:** parameter `OUTPUT_FORMAT` dihapus; keluaran layer kini `OUT_<NAMA>` (mis. `OUT_01_PADANAN_LEVEL1`). Model Graphical Modeler/skrip lama perlu diperbarui.
+
+## Pembaruan v0.9.9 — backend AI v0.9.8 + Processing Toolbox
+
+v0.9.9 menggabungkan dua jalur pengembangan: **backend AI v0.9.8** (tiga mode training, Full AI / Hybrid, `ai_matching.py`, impor GOLD yang diperketat) dan **akses Processing Toolbox v0.9.7**.
+
+* **Processing Toolbox → NIB–NOP Integrator** berisi Modul 1, 2, 3, 3.1, 4, 5 dan 6 (id algoritma `nib_nop_integrator:modul_...`, tidak berubah dari v0.9.7).
+* **Klik ganda di Toolbox** (sejak v0.10.0: formulir Processing standar; lihat bagian di atas) memakai pilihan v0.9.8 untuk Modul 4 dan 5. Modul 6 membuka panel Verifikasi Studio.
+* **Batch process, Graphical Modeler, `processing.run()` dan `qgis_process`** memakai formulir parameter Processing. Untuk Modul 4 tersedia dropdown *Sumber pelatihan* (GOLD Only / SILVER Only / SILVER + GOLD) beserta rekap SILVER (ZIP/CSV), GOLD operator/fitur/historis, radius dan target precision. Untuk Modul 5 tersedia dropdown *Mode prediksi* (Hybrid / Full AI), rekap Modul 3 (ZIP/CSV, wajib untuk Hybrid), model, metadata, skor minimum (bawaan 0,90), margin dan izin Level 1 otomatis (bawaan mati).
+* Modul 5 di Toolbox sama seperti di menu: **tidak** ada gerbang aturan Modul 3 (overlap, deviasi luas) dan tidak ada tahap 2 nama; hanya ambang nama COCOK/MIRIP untuk fitur.
+* Modul 4 mewajibkan layer BPN/PBB di semua mode (sama seperti dialog v0.9.8).
+* Dari v0.9.7 dipertahankan: dropdown layer hanya menampilkan layer vektor sesuai geometri (raster tidak lagi membuat dropdown kolom error). Dari v0.9.8 dipertahankan: penerimaan status `TERVERIFIKASI` pada GOLD, sidik-jari data, dan seluruh perbaikan `ml.py`.
+* Pengujian baru `tests/test_processing_spec.py` (tanpa PyQGIS) memastikan setiap widget/`val()` yang dibaca `run1…run5` tersedia di parameter Toolbox, sehingga perubahan dialog di masa depan tidak diam-diam merusak jalur Batch/Modeler.
+
+**Status verifikasi:** kode ter-compile dan seluruh uji tanpa PyQGIS lulus; uji yang memerlukan PyQGIS (`test_processing.py`) dan GUI QGIS belum dijalankan di lingkungan pembuat paket. Lihat `ACCEPTANCE_TEST.md` bagian v0.9.9.
+
+## Pembaruan v0.9.8 — tiga mode training dan Full AI / Hybrid
+
+**Baca bagian ini terlebih dahulu.** Penjelasan v0.9.7 dan versi sebelumnya di bawah hanya riwayat perubahan; pada v0.9.8 Modul 5 **tidak lagi menghitung ulang** keputusan aturan Modul 3.
+
+### Modul 4: pilih sumber belajar
+
+| Mode | Input wajib | Status tanpa pengujian GOLD independen |
+|---|---|---|
+| `SILVER_ONLY` | `rekap_csv.zip` dari Modul 3 (atau CSV `pasangan_kandidat.csv`) | `PREVIEW_ONLY`: AI boleh memberi usulan studio, **tidak** membuat Level 1 otomatis |
+| `GOLD_ONLY` | CSV GOLD operator, CSV fitur historis, atau BPN/PBB historis + CSV pasangan berlabel | Model dapat menjadi `GOLD_TESTED_REVIEW_REQUIRED` bila pengujian independen memenuhi ambang |
+| `SILVER_GOLD` | Keduanya | GOLD untuk validasi/testing; SILVER bobot agregat per kelas dibatasi agar tidak menenggelamkan GOLD |
+
+- Pemilihan sumber adalah dropdown tersendiri di Modul 4. Pilihan yang tidak dipakai diabaikan tanpa menghapus path yang pernah Anda isikan.
+- Data BPN/PBB sekarang **tetap wajib** untuk membentuk fitur kandidat dan memeriksa identitas. SILVER harus berasal dari layer yang sama persis dengan hasil Modul 3 (diperiksa melalui sidik-jari data).
+- SILVER adalah **weak label**, bukan bukti benar. Model SILVER Only boleh dilatih, tetapi tidak bisa diklaim memiliki precision independen dari GOLD.
+- Seluruh mode memerlukan dua kelas label (benar dan salah). Jika SILVER tidak membentuk kedua kelas, tambahkan data pelatihan yang sesuai.
+- GOLD dibagi secara spasial ke training/validation/testing bila memenuhi syarat. SILVER dari kelompok GOLD yang ditahan untuk pengujian, atau dengan NIB/NOP yang sama, dikeluarkan dari training. GOLD testing tidak digunakan untuk memilih model.
+- `Target precision GOLD` (misalnya 0,80) adalah **target evaluasi precision**, bukan `skor minimum AI`. Pengujian model saat ini menggunakan ambang skor 0,90 dan metadata menyimpannya.
+
+### Modul 5: pilih cara menggunakan model
+
+| Mode | Input | Cara menghasilkan hasil |
+|---|---|---|
+| **Full AI (`AI_ONLY`)** | Layer BPN dan PBB + `model_terpilih.joblib` + `metadata_model.json` | Skor semua kandidat spasial, menghasilkan usulan AI tanpa aturan Modul 3 |
+| **Hybrid (`HYBRID`)** | Semua input Full AI **ditambah** `rekap_csv.zip` hasil Modul 3 | Impor pasangan Level 1 aturan **tanpa menghitung ulang**, lalu prediksi AI terhadap semua kandidat; usulan yang memakai NIB/NOP sudah terpasang tidak digabung otomatis |
+
+**Penting:** overlap, deviasi luas, dan nama merupakan **fitur prediksi**, tidak lagi gerbang aturan yang menolak pasangan AI. Gerbang seleksi AI terbatas pada skor, selisih dengan pesaing, NIB/NOP yang tidak kosong/unik, dan hubungan satu-ke-satu. Radius pencarian tetap membatasi *candidate generation*; pasangan yang berada di luar radius tidak bisa diprediksi.
+
+Untuk mengizinkan pasangan AI menjadi **Level 1 otomatis**, model harus berstatus `GOLD_TESTED_REVIEW_REQUIRED`, centang izin operator, dan `Skor minimum AI` harus **tidak lebih rendah** dari ambang yang telah diuji dalam metadata model. Tanpa seluruh syarat itu, usulan tetap tersedia untuk verifikasi studio pada layer `05_usulan_ai`; tidak dipaksakan menjadi Level 1.
+
+Pada **Hybrid**, input ZIP/CSV Modul 3 harus dari layer BPN/PBB yang **identik** dengan layer Modul 5. Plugin memeriksa sidik-jari BPN dan PBB serta memverifikasi identitas NIB/NOP setiap pasangan Level 1. Gunakan keluaran `rekap_csv.zip` di folder Modul 3, **bukan** ZIP plugin. File `.zip` rekap tidak perlu diekstrak.
+
+Keluaran Modul 5:
+
+1. `01_padanan_level1`: Level 1 aturan (khusus Hybrid) dan Level 1 AI teruji yang diizinkan operator.
+2. `02_bpn_level2` dan `03_pbb_level2`: objek yang belum diterima otomatis.
+3. `04_rekomendasi_ai_studio`: kandidat terbaik per BPN yang belum dipadukan.
+4. `05_usulan_ai`: usulan satu-ke-satu dengan skor dan alasan, **termasuk untuk SILVER Only**; jangan disalahartikan sebagai Level 1 resmi.
+5. `06_konflik_ai_rule`: kandidat AI berskor tinggi yang berbenturan dengan pasangan Modul 3 (Hybrid saja).
+6. `rekap_csv.zip`, `laporan_modul5.pdf`: skor seluruh kandidat, usulan, tambahan yang benar-benar diterima, konflik, dan alasan seleksi.
+
+Perbandingan tiga mode training sebaiknya memakai BPN/PBB, radius kandidat, dan GOLD pengujian independen **yang sama**, bukan membandingkan jumlah Level 1 semata. Meningkatnya jumlah usulan tidak membuktikan model lebih akurat.
+
+**Keselamatan operasional:** gunakan folder output baru saat uji versi ini. Model SILVER Only dapat menghasilkan banyak prediksi keliru; gunakan verifikasi studio. QGIS GUI tidak tersedia di lingkungan pengembangan paket sehingga uji akhir plugin pada QGIS 3.28+ atau QGIS 4.x masih wajib sebelum operasional.
 
 ## Pembaruan 0.9.2 — dropdown atribut
 
@@ -30,15 +99,19 @@ Core (Modul 1–3 dan 6): PyQGIS, Qt/QGIS saja. AI (Modul 4–5): Python package
 
 **Pembaruan 0.9.3 — Evaluasi AI Modul 4:** Modul 4 kini melaporkan seluruh metrik TRAIN / VALIDATION / TEST (GOLD independen), confusion matrix kedua model, kurva ROC, PR, kalibrasi, feature importance, batas bawah Wilson 95% Precision, panduan interpretasi ambang, dan rekomendasi otomatis. Seluruh gambar langsung masuk ke PDF `laporan_modul4.pdf`. Metrik TEST **tidak dibuat** bila GOLD independen tidak tersedia; laporan menulis BELUM DAPAT DINILAI. `rekap_csv.zip` menambahkan `metrik_train_validation_test.csv`, `feature_importance.csv`, `panduan_ambang_metrik.csv`, `penilaian_per_metrik.csv`, dan `rekomendasi_model.csv`. Model dan parameter aturan Modul 1–3 tidak berubah.
 
-**Memperbarui instalasi:** Nonaktifkan plugin lama di QGIS, gunakan **Plugins > Manage and Install Plugins > Install from ZIP** dengan paket v0.9.4, lalu restart QGIS. Jika QGIS tidak mengganti file versi lama, hapus instalasi plugin lama lewat manajer plugin sebelum memasang ulang. Jangan hapus atau timpa folder data hasil kerja operator.
+**Memperbarui instalasi:** Nonaktifkan plugin lama di QGIS, gunakan **Plugins > Manage and Install Plugins > Install from ZIP** dengan paket terbaru, lalu restart QGIS. Jika QGIS tidak mengganti file versi lama, hapus instalasi plugin lama lewat manajer plugin sebelum memasang ulang. Jangan hapus atau timpa folder data hasil kerja operator.
 
-## Pembaruan v0.9.7 - Processing Toolbox
+## Pembaruan v0.9.7 — GOLD dan transparansi AI
 
-Ketujuh tools menu kini juga ada di **Processing Toolbox → NIB–NOP Integrator** (Modul 1, 2, 3, 3.1, 4, 5 dan 6).
+- Modul 4 membaca CSV dengan pemisah koma maupun titik koma, dan menerima status verifikasi `DIVERIFIKASI` atau `TERVERIFIKASI`. Kolom sumber/bukti verifikasi tetap wajib diisi.
+- GOLD dicocokkan ke kandidat melalui **NIB dan NOP asli** bila unik; `pair_id`/nomor urut dapat digunakan hanya bila identitas tidak bertentangan. NOP yang berubah menjadi notasi ilmiah ditolak, bukan dipaksakan menjadi pasangan lain.
+- Saat operator sudah memasukkan GOLD tetapi **nol label yang sah terbaca**, training dihentikan dengan pesan penyebabnya. GOLD yang gagal dipetakan disimpan dalam `gold_ditolak.csv` untuk ditinjau.
+- CSV fitur historis harus memuat semua fitur 18/20 sesuai versi model. Angka yang rusak akibat format spreadsheet ditolak dengan pesan jelas.
+- Modul 4 melaporkan GOLD positif/negatif, GOLD ditolak, serta jumlah data validasi dan testing. Data SILVER saja tetap menjadi `PREVIEW_ONLY`.
+- Modul 5 menghasilkan `04_rekomendasi_ai_studio` (bila ada model dan kandidat) untuk menampilkan kandidat skor AI tanpa mengubah Level 1 aturan. Rincian gerbang promosi ada pada `skor_kandidat.csv` dan `rekap_gerbang_ai.csv`.
+- Hasil Level 1 tambahan tetap memerlukan model yang lolos uji GOLD, izin eksplisit operator, dan seluruh gerbang keamanan pasangan. **Kesamaan keluaran Level 1 Modul 3 dan 5 tidak lagi berarti AI tidak dijalankan**: lihat layer rekomendasi dan alasan penolakannya.
 
-* **Double-click di Toolbox membuka jendela yang sama dengan menu**: dialog Modul 1–5 dan 3.1 dari menu, dan panel Verifikasi Studio untuk Modul 6. Tampilan, isian, tombol Batal, laporan dan keluarannya sama persis.
-* Untuk *batch process*, *Graphical Modeler*, skrip Python (`processing.run('nib_nop_integrator:modul_3_pemaduan_aturan', {...})`) dan `qgis_process`, Modul 1–5 dan 3.1 memakai formulir parameter Processing. Formulir itu menjalankan orkestrasi dialog yang sama (`dialogs.run1…run5`), jadi aturan, layer keluaran (`01_padanan_level1`, dst.), `rekap_csv.zip` dan PDF tetap identik. Parameter dan nilai bawaannya sama dengan dialog.
-* Modul 6 bersifat interaktif di peta, sehingga tidak tersedia di batch/Modeler/skrip.
+**Untuk data Sungai Beliung yang dilampirkan:** gunakan `gold_operator_terpetakan.csv` dari ZIP GOLD yang telah direkonsiliasi, bukan CSV asli yang NOP-nya berubah menjadi notasi ilmiah. Pilih sebagai **CSV label operator pada layer yang dipilih**, bersama kedua SHP sumber penuh yang sesuai. File ini mencatat deklarasi verifikasi manual pengguna, bukan bukti administratif independen. Uji prediksi dan verifikasi lanjutan tetap wajib sebelum mengesahkan pemaduan.
 
 ## Pembaruan v0.9.6 - Pemadanan tahap 2 (buffer + skor nama)
 
@@ -119,8 +192,8 @@ Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligo
 | 2. Spasial | Dua layer awal, overlap area minimum, gap minimum | Dua layer QA geometri, PDF + ZIP CSV |
 | 3. Pemaduan aturan | **Dua layer hasil koreksi manual operator** (bukan otomatis dari Modul 2); parameter 50/90/50 bisa diubah | Padanan L1, BPN L2, PBB L2, CSV pasangan + sidik jari input, PDF |
 | 3.1 Pemaduan PBB titik | Layer BPN poligon + layer PBB **titik NOP** hasil koreksi; kolom nama opsional; toleransi titik 5 m | Padanan L1 (+ `valid_nama`, `kekuatan`), BPN L2, PBB L2 (titik), CSV pasangan, PDF |
-| 4. Training hybrid | Layer operator + CSV kandidat Modul 3 (silver) opsional; CSV fitur GOLD dan/atau layer historis + CSV verifikasi opsional | Model joblib, metadata JSON, rekap CSV+PDF |
-| 5. Inference | Layer operator dan model/metadata Modul 4 | Tiga GeoJSON/GPKG/SHP Level 1 dan 2, CSV skor + PDF |
+| 4. Training AI tiga mode | Layer BPN/PBB + SILVER, GOLD atau keduanya | Model joblib, metadata JSON, rekap CSV+PDF |
+| 5. Full AI / Hybrid | Layer BPN/PBB dan model/metadata; rekap Modul 3 tambahan khusus Hybrid | Level 1/2, usulan AI, konflik, skor CSV + PDF |
 | 6. Verifikasi studio | Dua layer aktif + CSV pasangan kandidat opsional | Label manual per-pasangan, CSV langsung, ZIP+PDF rekap |
 
 ### Perbedaan input dan fitur
@@ -129,7 +202,7 @@ Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligo
 
 **Modul 4:** silver labels adalah tebakan aturan dan **tidak** diklaim benar. Level 2 tidak menjadi label negatif. Untuk GOLD gunakan CSV berisi `pair_id` atau `record_bpn`/`record_pbb` atau `NIB`/`NOP`, `label` (0/1), `status_verifikasi=DIVERIFIKASI`, `sumber_verifikasi`, opsional `wilayah`. Bisa pula CSV fitur lengkap yang mengandung 18 fitur (lihat `engine.FEATURE_NAMES`) dan kolom label/verifikasi, atau layer historis BPN dan PBB berikut tabel pasangan berlabel. Untuk validasi yang bagus, data GOLD harus mencakup area/kelompok independen. **Data Level 2 tanpa label eksplisit 0 adalah belum pasti, bukan negatif.**
 
-**Modul 5:** tanpa model dapat menjalankan aturan baseline; dengan silver-only hanya memberikan skor prioritas verifikasi. Tambahan Level 1 melalui AI **dibatasi** pada model dengan GOLD teruji, persetujuan eksplisit, keunikan ID, bebas overlap internal, deviasi luas di bawah ambang, dan margin skor kandidat. Model `.joblib` hanya boleh dimuat dari sumber terpercaya (format pickle bisa menjalankan kode Python saat dimuat).
+**Modul 5 (sejak v0.9.8):** selalu memerlukan model. Full AI memprediksi secara independen, Hybrid mengimpor baseline Modul 3 dari ZIP/CSV dengan pemeriksaan sidik-jari. SILVER Only menghasilkan usulan untuk studio; penambahan Level 1 otomatis memerlukan GOLD teruji, izin operator, batas skor evaluasi, keunikan identitas, margin skor, dan 1:1. Tidak ada gerbang deviasi luas atau overlap Modul 3 dalam keputusan AI. Model `.joblib` hanya boleh dimuat dari sumber terpercaya (format pickle dapat menjalankan kode Python saat dimuat).
 
 **Modul 6:** tabel pasangan dipaginasi 200 baris; klik baris atau gunakan tombol klik bidang BPN di peta untuk menyorot calon pasangan dan memperbesar peta. Operator mengisi nama, sumber bukti, catatan, lalu klik **Cocok**, **Tidak cocok**, atau **Belum pasti**. CSV keputusan disimpan setiap kali menekan tombol. Masukkan CSV hasil ini ke Modul 4 untuk menambah data GOLD (pastikan layer sama). Jika memilih CSV dari Modul 3/5, urutan record dalam layer harus tetap sama dengan ketika CSV dibuat.
 
@@ -162,6 +235,7 @@ Modul 1, 2, 4, 5 dan 6 menerima PBB poligon maupun titik; layer BPN tetap poligo
 - `engine.py` algoritma spasial native QGIS
 - `logic.py` aturan murni (unit-testable)
 - `ml.py` data GOLD/SILVER, training dan inference
+- `ai_matching.py` pemilihan mode, impor baseline Modul 3, dan penentuan usulan AI independen (dapat diuji tanpa QGIS)
 - `storage.py` export layer/ZIP CSV/laporan PDF Qt
 - `compat.py` dukungan PyQt/Qt5 dan Qt6
 

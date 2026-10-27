@@ -1288,7 +1288,7 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
     if not actions:actions.append(('Periksa kesiapan model dan input',
         'Tidak ada kandidat AI atau Level 2 yang dapat ditindaklanjuti pada keluaran ini.'))
     _brief5(r,lev1,lev2b,lev2p,scores,extras,stats,notes,model_meta,actions[:3])
-    r.figpage(1,'Hasil klasifikasi','Perbandingan Level 1 baseline, tambahan AI, dan Level 2.')
+    r.figpage(1,'Hasil pemaduan','Level 1 dari aturan yang diimpor, Level 1 AI teruji GOLD, dan sisa Level 2.')
     r.bar(['Level 1 aturan','Level 1 baru AI','BPN Level 2','PBB Level 2'],
           [('Jumlah',[max(0,len(lev1)-len(extras)),len(extras),len(lev2b),len(lev2p)])])
     r.figpage(2,'Distribusi skor AI','Histogram skor seluruh kandidat yang diprediksi model. Skor hanya probabilitas apabila model sudah dikalibrasi.')
@@ -1298,6 +1298,12 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
         bins=[sum(1 for x in ss if x>=i/10 and (x<(i+1)/10 if i<9 else x<=1)) for i in range(10)]
         r.bar(['%02d-%02d'% (i*10,(i+1)*10) for i in range(10)],[('Kandidat',bins)])
     else:r.no_data('Model belum dipilih atau skor AI tidak tersedia.')
+    if 'Usulan AI satu-ke-satu' in stats:
+        r.figpage(3,'Seleksi prediksi AI independen',
+                  'Usulan AI belum tentu dapat diterima otomatis: status GOLD dan izin operator menentukan promosi.')
+        r.bar(['Usulan AI','Level 1 AI diterima','Konflik Rule-AI'],
+              [('Jumlah',[stats.get('Usulan AI satu-ke-satu',0),len(extras),
+                          stats.get('Konflik Rule-AI untuk studio',0)])])
     r.start('Hasil pemaduan BPN')
     r.map([(lev2b,LEVEL_2,None,'BPN Level 2'),(lev1,LEVEL_1,None,'BPN Level 1')],
           'Hasil pemaduan menurut bidang BPN')
@@ -1318,7 +1324,7 @@ def report5(folder,lev1,lev2b,lev2p,pairs,scores,extras,stats,notes,model_meta,l
         if k in ('algorithm','status','precision','model_version','test_data_source'):
             r.text('%s: %s'%(metric_label(k),human_status(v) if k=='status' else v),9)
     r.footer_recommendations(actions[:3],
-        ['rekap_csv.zip: skor seluruh kandidat, pasangan berbasis aturan, tambahan AI.'])
+        ['rekap_csv.zip: skor kandidat, usulan AI, pasangan aturan (bila Hybrid), tambahan AI, dan konflik.'])
     return r.close()
 
 

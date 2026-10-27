@@ -1,19 +1,16 @@
-NIB-NOP INTEGRATOR v0.9.7 - PROCESSING TOOLBOX
+NIB-NOP INTEGRATOR v0.9.7 - PERBAIKAN GOLD & INFERENCE
 
-- Ketujuh tools menu terdaftar di Processing Toolbox (provider "NIB–NOP Integrator",
-  id nib_nop_integrator): Modul 1, 2, 3, 3.1, 4, 5 dan 6.
-- Double-click di Toolbox membuka jendela yang sama dengan menu
-  (createCustomParametersWidget): dialogs.ToolDialog untuk Modul 1-5 dan 3.1, panel
-  Verifikasi Studio untuk Modul 6.
-- Batch process, Graphical Modeler, processing.run() dan qgis_process memakai parameter
-  Processing. processing_provider.HeadlessTool meminjam run1..run5 dari
-  dialogs.ToolDialog, sehingga aturan pemaduan, layer keluaran, rekap_csv.zip dan PDF
-  sama persis dengan menu. Parameter (kunci, label, nilai bawaan) mengikuti dialog,
-  ditambah format layer dan folder hasil. Layer hasil dimuat ke proyek; Cancel = Batal.
-- Algoritma berjalan di thread utama (NoThreading) seperti dialog, karena membaca layer
-  proyek dan melukis PDF dengan Qt.
-- Modul 6 interaktif di peta: hanya dibuka dari Toolbox/menu, disembunyikan dari Modeler.
-- plugin.py: initProcessing() (dipanggil QGIS karena hasProcessingProvider=yes, juga
-  untuk qgis_process) dan pelepasan provider saat unload.
-- Uji baru tests/test_processing.py (memerlukan PyQGIS): 7 algoritma terdaftar, metode
-  dialog yang dipinjam masih ada, dan Modul 3 menghasilkan layer, PDF dan ZIP.
+1. Modul 4 membaca koma / titik koma dan memberi galat untuk skema CSV rusak.
+2. GOLD membutuhkan label 0/1, status DIVERIFIKASI/TERVERIFIKASI,
+   dan sumber_verifikasi. NOP notasi ilmiah ditolak sebagai identitas rusak.
+3. Identitas NIB+NOP yang unik lebih dipercaya daripada nomor urut record;
+   pair_id lama yang bertentangan dengan NIB/NOP tidak digunakan.
+4. Training tidak lagi melanjutkan diam-diam jika file GOLD terpilih tetapi
+   nol pasangan diterima. Baris tertolak tersedia di gold_ditolak.csv.
+5. Modul 4 menampilkan n GOLD positif/negatif, n ditolak, validasi dan testing.
+6. Modul 5 melaporkan alasan konkret kandidat tidak menjadi Level 1,
+   menghasilkan rekap_gerbang_ai.csv, dan layer 04_rekomendasi_ai_studio
+   untuk saran AI pada BPN yang belum dipadankan melalui aturan.
+7. Aturan pemaduan deterministik dan perlindungan promosi AI tidak dilonggarkan.
+8. Enam pengujian impor GOLD tanpa PyQGIS ditambahkan; uji nyata GUI/QGIS
+   tetap perlu dilakukan sebelum penggunaan operasional.
